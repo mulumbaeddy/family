@@ -2,24 +2,18 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>OBUNANGWE BULAIIRE - Family Payment Tracker</title>
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/sql-wasm.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
+        * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             background: #f5f5f5;
             overflow-x: hidden;
         }
-
         :root {
             --primary-orange: #ff862d;
             --primary-teal: #01605a;
@@ -32,7 +26,6 @@
             --sidebar-width: 280px;
             --sidebar-collapsed: 80px;
         }
-
         /* Sidebar */
         .sidebar {
             position: fixed;
@@ -47,20 +40,16 @@
             box-shadow: 2px 0 20px rgba(0,0,0,0.1);
             overflow-y: auto;
         }
-
         .sidebar.collapsed { width: var(--sidebar-collapsed); }
         .sidebar.collapsed .sidebar-text, .sidebar.collapsed .nav-label { display: none; }
-
         .sidebar-header {
             padding: 25px 20px;
             text-align: center;
             border-bottom: 1px solid rgba(255,255,255,0.1);
             position: relative;
         }
-
         .logo h2 { font-size: 22px; font-weight: bold; }
         .logo p { font-size: 11px; opacity: 0.8; margin-top: 5px; }
-
         .toggle-btn {
             position: absolute;
             right: -12px;
@@ -72,12 +61,8 @@
             height: 28px;
             border-radius: 50%;
             cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
             font-size: 12px;
         }
-
         .nav-menu { padding: 20px 0; }
         .nav-item {
             padding: 12px 20px;
@@ -90,10 +75,9 @@
             gap: 15px;
         }
         .nav-item:hover { background: rgba(255,255,255,0.1); transform: translateX(5px); }
-        .nav-item.active { background: var(--primary-orange); box-shadow: 0 5px 15px rgba(255,134,45,0.3); }
+        .nav-item.active { background: var(--primary-orange); }
         .nav-item i { width: 24px; font-size: 20px; }
         .nav-label { font-size: 14px; font-weight: 500; }
-
         .user-info-sidebar {
             position: absolute;
             bottom: 0;
@@ -103,8 +87,6 @@
             border-top: 1px solid rgba(255,255,255,0.1);
             background: rgba(0,0,0,0.2);
         }
-
-        /* Main Content */
         .main-content {
             margin-left: var(--sidebar-width);
             transition: all 0.3s ease;
@@ -112,8 +94,6 @@
             padding: 20px;
         }
         .main-content.expanded { margin-left: var(--sidebar-collapsed); }
-
-        /* Header */
         .header {
             background: white;
             border-radius: 15px;
@@ -131,8 +111,6 @@
         .user-badge { background: var(--primary-gradient); color: white; padding: 8px 15px; border-radius: 20px; font-weight: bold; }
         .role-badge { background: var(--primary-teal); color: white; padding: 4px 10px; border-radius: 15px; font-size: 11px; }
         .logout-btn { background: var(--danger); color: white; border: none; padding: 8px 20px; border-radius: 8px; cursor: pointer; }
-
-        /* Cards */
         .card {
             background: white;
             border-radius: 15px;
@@ -151,8 +129,6 @@
             flex-wrap: wrap;
             gap: 10px;
         }
-
-        /* Stats Grid */
         .stats-grid {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
@@ -173,8 +149,6 @@
         .stat-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 4px; background: var(--primary-gradient); }
         .stat-card:hover { transform: translateY(-5px); }
         .stat-number { font-size: 32px; font-weight: bold; background: var(--primary-gradient); -webkit-background-clip: text; background-clip: text; color: transparent; margin: 10px 0; }
-
-        /* Tables */
         .data-table {
             width: 100%;
             border-collapse: collapse;
@@ -185,16 +159,10 @@
         .data-table th { background: var(--primary-gradient); color: white; padding: 12px; text-align: left; }
         .data-table td { padding: 12px; border-bottom: 1px solid #f0f0f0; }
         .data-table tr:hover { background: var(--primary-peach); }
-
-        /* Buttons */
-        .btn-primary { background: var(--primary-gradient); color: white; border: none; padding: 8px 16px; border-radius: 8px; cursor: pointer; transition: all 0.3s; }
-        .btn-primary:hover { transform: translateY(-2px); }
-        .btn-danger { background: var(--danger); color: white; border: none; padding: 5px 10px; border-radius: 5px; cursor: pointer; }
-        .btn-edit { background: var(--info); color: white; border: none; padding: 5px 10px; border-radius: 5px; cursor: pointer; }
-        .btn-success { background: var(--success); color: white; border: none; padding: 8px 16px; border-radius: 8px; cursor: pointer; }
+        .btn-primary { background: var(--primary-gradient); color: white; border: none; padding: 8px 16px; border-radius: 8px; cursor: pointer; }
+        .btn-danger { background: var(--danger); color: white; border: none; padding: 5px 12px; border-radius: 5px; cursor: pointer; }
+        .btn-edit { background: var(--info); color: white; border: none; padding: 5px 12px; border-radius: 5px; cursor: pointer; }
         .btn-whatsapp { background: #25D366; color: white; border: none; padding: 8px 16px; border-radius: 8px; cursor: pointer; }
-
-        /* Activity Grid */
         .activity-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(350px, 1fr)); gap: 20px; }
         .activity-card {
             background: linear-gradient(135deg, #fff 0%, var(--primary-peach) 100%);
@@ -204,7 +172,6 @@
             transition: all 0.3s;
         }
         .activity-card:hover { transform: translateY(-3px); box-shadow: 0 10px 20px rgba(0,0,0,0.1); }
-
         .progress-bar-container {
             background: #e0e0e0;
             border-radius: 10px;
@@ -212,15 +179,11 @@
             margin: 10px 0;
         }
         .progress-bar { background: var(--primary-gradient); color: white; padding: 5px; text-align: center; font-size: 12px; }
-
-        /* Badges */
         .badge { display: inline-block; padding: 4px 12px; border-radius: 20px; font-size: 11px; font-weight: bold; }
         .badge-active { background: var(--success); color: white; }
         .badge-completed { background: var(--info); color: white; }
         .paid-status { color: var(--success); font-weight: bold; }
         .unpaid-status { color: var(--danger); font-weight: bold; }
-
-        /* Contact Cards */
         .contact-card {
             display: flex;
             justify-content: space-between;
@@ -236,27 +199,65 @@
         .whatsapp-btn { background: #25D366; color: white; }
         .call-btn { background: var(--info); color: white; }
         .sms-btn { background: var(--warning); color: white; }
-
-        /* Dropdown */
-        .dropdown { position: relative; display: inline-block; }
-        .dropdown-content {
-            display: none;
-            position: absolute;
-            right: 0;
-            background-color: white;
-            min-width: 250px;
-            box-shadow: 0 8px 16px rgba(0,0,0,0.2);
-            border-radius: 10px;
-            z-index: 1;
-            max-height: 300px;
-            overflow-y: auto;
+        .fab {
+            position: fixed;
+            bottom: 30px;
+            right: 30px;
+            width: 56px;
+            height: 56px;
+            border-radius: 50%;
+            background: var(--primary-gradient);
+            color: white;
+            border: none;
+            font-size: 24px;
+            cursor: pointer;
+            box-shadow: 0 5px 20px rgba(0,0,0,0.2);
+            z-index: 90;
         }
-        .dropdown-content a { color: #333; padding: 12px 16px; text-decoration: none; display: block; cursor: pointer; border-bottom: 1px solid #eee; }
-        .dropdown-content a:hover { background-color: var(--primary-peach); }
-        .dropdown:hover .dropdown-content { display: block; }
-        .menu-icon { cursor: pointer; padding: 8px 12px; border-radius: 8px; background: var(--primary-peach); }
-
-        /* Modal */
+        .fab:hover { transform: scale(1.1); }
+        .view-only-banner {
+            background: linear-gradient(135deg, #f39c12, #e67e22);
+            color: white;
+            text-align: center;
+            padding: 10px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            font-size: 14px;
+        }
+        .loading-screen {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(135deg, #01605a 0%, #ff862d 100%);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 9999;
+            flex-direction: column;
+            color: white;
+            text-align: center;
+        }
+        .login-container {
+            max-width: 500px;
+            margin: 80px auto;
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            text-align: center;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        .role-btn {
+            padding: 20px;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.3s;
+            margin-bottom: 15px;
+        }
+        .role-btn:hover { border-color: var(--primary-orange); background: var(--primary-peach); }
+        .login-btn { width: 100%; padding: 12px; background: var(--primary-gradient); color: white; border: none; border-radius: 10px; cursor: pointer; font-size: 16px; margin-top: 20px; }
         .modal {
             display: none;
             position: fixed;
@@ -284,69 +285,6 @@
         .form-group { margin-bottom: 15px; }
         .form-group label { display: block; margin-bottom: 5px; color: #555; font-weight: 500; }
         input, select, textarea { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; }
-
-        /* FAB */
-        .fab {
-            position: fixed;
-            bottom: 30px;
-            right: 30px;
-            width: 56px;
-            height: 56px;
-            border-radius: 50%;
-            background: var(--primary-gradient);
-            color: white;
-            border: none;
-            font-size: 24px;
-            cursor: pointer;
-            box-shadow: 0 5px 20px rgba(0,0,0,0.2);
-            transition: all 0.3s;
-            z-index: 90;
-        }
-        .fab:hover { transform: scale(1.1); }
-
-        .view-only-banner {
-            background: linear-gradient(135deg, #f39c12, #e67e22);
-            color: white;
-            text-align: center;
-            padding: 10px;
-            border-radius: 10px;
-            margin-bottom: 20px;
-            font-size: 14px;
-        }
-
-        .loading-screen {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: linear-gradient(135deg, #01605a 0%, #ff862d 100%);
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            z-index: 9999;
-        }
-
-        .login-container {
-            max-width: 500px;
-            margin: 80px auto;
-            background: white;
-            border-radius: 20px;
-            padding: 40px;
-            text-align: center;
-            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
-        }
-        .role-btn {
-            padding: 20px;
-            border: 2px solid #e0e0e0;
-            border-radius: 10px;
-            cursor: pointer;
-            transition: all 0.3s;
-            margin-bottom: 15px;
-        }
-        .role-btn:hover { border-color: var(--primary-orange); background: var(--primary-peach); }
-        .login-btn { width: 100%; padding: 12px; background: var(--primary-gradient); color: white; border: none; border-radius: 10px; cursor: pointer; font-size: 16px; margin-top: 20px; }
-
         @media (max-width: 768px) {
             .sidebar { width: var(--sidebar-collapsed); }
             .sidebar .sidebar-text, .sidebar .nav-label { display: none; }
@@ -357,29 +295,26 @@
     </style>
 </head>
 <body>
-    <!-- Loading Screen -->
     <div id="loadingScreen" class="loading-screen">
-        <div style="text-align: center; color: white;">
-            <i class="fas fa-hand-holding-heart fa-pulse" style="font-size: 64px; margin-bottom: 20px;"></i>
-            <h2>OBUNANGWE BULAIIRE</h2>
-            <p>Loading Family Management System...</p>
-        </div>
+        <i class="fas fa-database fa-pulse" style="font-size: 64px; margin-bottom: 20px;"></i>
+        <h2>OBUNANGWE BULAIIRE</h2>
+        <p>Initializing Database...</p>
+        <p style="font-size: 12px; margin-top: 10px;">Please wait</p>
     </div>
 
-    <!-- Login Screen -->
-    <div id="loginScreen" class="login-container">
+    <div id="loginScreen" class="login-container" style="display: none;">
         <i class="fas fa-hand-holding-heart" style="font-size: 48px; color: var(--primary-orange); margin-bottom: 20px;"></i>
         <h2 style="color: var(--primary-teal);">OBUNANGWE BULAIIRE</h2>
-        <p style="color: #666; margin-bottom: 30px;">Family Payment & Activity Tracker</p>
+        <p style="color: #666; margin-bottom: 30px;">Family Payment Tracker</p>
         
         <div class="role-btn" onclick="selectRole('admin')" id="adminRoleBtn">
             <div style="font-size: 20px; font-weight: bold;">👑 Administrator</div>
-            <div style="font-size: 12px; color: #666;">Full Control: Create, Edit, Delete, View all payments, Share reports</div>
+            <div style="font-size: 12px; color: #666;">Full Control</div>
         </div>
         
         <div class="role-btn" onclick="selectRole('user')" id="userRoleBtn">
             <div style="font-size: 20px; font-weight: bold;">👤 Family Member</div>
-            <div style="font-size: 12px; color: #666;">View Only: See MY payments and activity totals only</div>
+            <div style="font-size: 12px; color: #666;">View Only</div>
         </div>
 
         <div id="adminPasswordDiv" style="display: none; margin-top: 20px;">
@@ -396,70 +331,35 @@
         
         <div style="margin-top: 20px; font-size: 12px; color: #999;">
             <p>🔐 Admin Password: <strong>admin123</strong></p>
-            <p>👤 Family members: Select from dropdown (No password)</p>
+            <p>👤 Family members: Select from dropdown</p>
         </div>
     </div>
 
-    <!-- Main App Container -->
     <div id="appContainer" style="display: none;">
-        <!-- Sidebar -->
         <div class="sidebar" id="sidebar">
             <div class="sidebar-header">
                 <div class="logo">
                     <h2><i class="fas fa-hand-holding-heart"></i> <span class="sidebar-text">OBUNANGWE</span></h2>
                     <p class="sidebar-text">BULAIIRE</p>
                 </div>
-                <button class="toggle-btn" onclick="toggleSidebar()">
-                    <i class="fas fa-chevron-left"></i>
-                </button>
+                <button class="toggle-btn" onclick="toggleSidebar()"><i class="fas fa-chevron-left"></i></button>
             </div>
             <div class="nav-menu">
-                <div class="nav-item" onclick="switchPage('dashboard')">
-                    <i class="fas fa-tachometer-alt"></i>
-                    <span class="nav-label">Dashboard</span>
-                </div>
-                <div class="nav-item" onclick="switchPage('myactivities')" id="myActivitiesNav">
-                    <i class="fas fa-list"></i>
-                    <span class="nav-label">My Activities</span>
-                </div>
-                <div class="nav-item" onclick="switchPage('activities')" id="activitiesNav">
-                    <i class="fas fa-tasks"></i>
-                    <span class="nav-label">Activities</span>
-                </div>
-                <div class="nav-item" onclick="switchPage('members')" id="membersNav">
-                    <i class="fas fa-users"></i>
-                    <span class="nav-label">Members</span>
-                </div>
-                <div class="nav-item" onclick="switchPage('payments')" id="paymentsNav">
-                    <i class="fas fa-money-bill-wave"></i>
-                    <span class="nav-label">Payments</span>
-                </div>
-                <div class="nav-item" onclick="switchPage('contacts')">
-                    <i class="fas fa-address-book"></i>
-                    <span class="nav-label">Contacts</span>
-                </div>
-                <div class="nav-item" onclick="switchPage('reports')" id="reportsNav">
-                    <i class="fas fa-chart-bar"></i>
-                    <span class="nav-label">Reports</span>
-                </div>
-                <div class="nav-item" onclick="switchPage('security')" id="securityNav">
-                    <i class="fas fa-shield-alt"></i>
-                    <span class="nav-label">Security</span>
-                </div>
+                <div class="nav-item" onclick="switchPage('dashboard')"><i class="fas fa-tachometer-alt"></i><span class="nav-label">Dashboard</span></div>
+                <div class="nav-item" onclick="switchPage('myactivities')" id="myActivitiesNav"><i class="fas fa-list"></i><span class="nav-label">My Activities</span></div>
+                <div class="nav-item" onclick="switchPage('activities')" id="activitiesNav"><i class="fas fa-tasks"></i><span class="nav-label">Activities</span></div>
+                <div class="nav-item" onclick="switchPage('members')" id="membersNav"><i class="fas fa-users"></i><span class="nav-label">Members</span></div>
+                <div class="nav-item" onclick="switchPage('payments')" id="paymentsNav"><i class="fas fa-money-bill-wave"></i><span class="nav-label">Payments</span></div>
+                <div class="nav-item" onclick="switchPage('contacts')"><i class="fas fa-address-book"></i><span class="nav-label">Contacts</span></div>
+                <div class="nav-item" onclick="switchPage('reports')" id="reportsNav"><i class="fas fa-chart-bar"></i><span class="nav-label">Reports</span></div>
+                <div class="nav-item" onclick="switchPage('security')" id="securityNav"><i class="fas fa-shield-alt"></i><span class="nav-label">Security</span></div>
             </div>
             <div class="user-info-sidebar">
-                <div class="nav-item">
-                    <i class="fas fa-user-circle"></i>
-                    <span class="nav-label" id="sidebarUserName">Loading...</span>
-                </div>
-                <div class="nav-item" onclick="logout()">
-                    <i class="fas fa-sign-out-alt"></i>
-                    <span class="nav-label">Logout</span>
-                </div>
+                <div class="nav-item"><i class="fas fa-user-circle"></i><span class="nav-label" id="sidebarUserName">Loading...</span></div>
+                <div class="nav-item" onclick="logout()"><i class="fas fa-sign-out-alt"></i><span class="nav-label">Logout</span></div>
             </div>
         </div>
 
-        <!-- Main Content -->
         <div class="main-content" id="mainContent">
             <div class="header">
                 <h1 class="page-title" id="pageTitle"><i class="fas fa-tachometer-alt"></i> Dashboard</h1>
@@ -468,1005 +368,488 @@
                     <span class="role-badge" id="roleBadge"></span>
                 </div>
             </div>
-            
             <div id="viewOnlyBanner" class="view-only-banner" style="display: none;">
-                <i class="fas fa-eye"></i> You are in View Only Mode - You can only see YOUR payments and activity totals
+                <i class="fas fa-eye"></i> View Only Mode - You can only see YOUR information
             </div>
-            
             <div id="pageContent"></div>
         </div>
     </div>
 
-    <!-- FAB Button - Admin Only -->
-    <button class="fab" id="fabButton" style="display: none;" onclick="openAddModal()">
-        <i class="fas fa-plus"></i>
-    </button>
+    <button class="fab" id="fabButton" style="display: none;" onclick="openAddModal()"><i class="fas fa-plus"></i></button>
 
     <!-- Modals -->
-    <div id="addActivityModal" class="modal">
-        <div class="modal-content">
-            <div class="modal-header"><h3><i class="fas fa-plus-circle"></i> Create Activity</h3><button class="close-modal" onclick="closeModal('addActivityModal')">&times;</button></div>
-            <form id="addActivityForm">
-                <div class="form-group"><label>Activity Name *</label><input type="text" id="activityName" required></div>
-                <div class="form-group"><label>Description</label><textarea id="activityDesc" rows="2"></textarea></div>
-                <div class="form-group"><label>Total Budget (UGX) *</label><input type="number" id="activityBudget" step="1000" required></div>
-                <div class="form-group"><label>Due Date *</label><input type="date" id="activityDueDate" required></div>
-                <button type="submit" class="btn-primary" style="width:100%">Create Activity</button>
-            </form>
-        </div>
-    </div>
+    <div id="addActivityModal" class="modal"><div class="modal-content"><div class="modal-header"><h3>Create Activity</h3><button class="close-modal" onclick="closeModal('addActivityModal')">&times;</button></div>
+    <form id="addActivityForm"><div class="form-group"><label>Activity Name</label><input type="text" id="activityName" required></div>
+    <div class="form-group"><label>Description</label><textarea id="activityDesc" rows="2"></textarea></div>
+    <div class="form-group"><label>Budget (UGX)</label><input type="number" id="activityBudget" required></div>
+    <div class="form-group"><label>Due Date</label><input type="date" id="activityDueDate" required></div>
+    <button type="submit" class="btn-primary">Create</button></form></div></div>
 
-    <div id="addMemberModal" class="modal">
-        <div class="modal-content">
-            <div class="modal-header"><h3><i class="fas fa-user-plus"></i> Add Member</h3><button class="close-modal" onclick="closeModal('addMemberModal')">&times;</button></div>
-            <form id="addMemberForm">
-                <div class="form-group"><label>Full Name *</label><input type="text" id="memberName" required></div>
-                <div class="form-group"><label>Role</label><select id="memberRole"><option value="parent">Parent</option><option value="child">Child</option></select></div>
-                <div class="form-group"><label>Phone Number</label><input type="tel" id="memberPhone" placeholder="+256XXXXXXXXX"></div>
-                <div class="form-group"><label>Email</label><input type="email" id="memberEmail"></div>
-                <button type="submit" class="btn-primary" style="width:100%">Add Member</button>
-            </form>
-        </div>
-    </div>
+    <div id="addMemberModal" class="modal"><div class="modal-content"><div class="modal-header"><h3>Add Member</h3><button class="close-modal" onclick="closeModal('addMemberModal')">&times;</button></div>
+    <form id="addMemberForm"><div class="form-group"><label>Name</label><input type="text" id="memberName" required></div>
+    <div class="form-group"><label>Role</label><select id="memberRole"><option value="parent">Parent</option><option value="child">Child</option></select></div>
+    <div class="form-group"><label>Phone</label><input type="tel" id="memberPhone"></div>
+    <div class="form-group"><label>Email</label><input type="email" id="memberEmail"></div>
+    <button type="submit" class="btn-primary">Add</button></form></div></div>
 
-    <div id="paymentModal" class="modal">
-        <div class="modal-content">
-            <div class="modal-header"><h3><i class="fas fa-money-bill-wave"></i> Record Payment</h3><button class="close-modal" onclick="closeModal('paymentModal')">&times;</button></div>
-            <form id="paymentForm">
-                <div class="form-group"><label>Select Activity</label><select id="paymentActivityId" required></select></div>
-                <div class="form-group"><label>Select Member</label><select id="paymentMemberId" required></select></div>
-                <div class="form-group"><label>Amount (UGX)</label><input type="number" id="paymentAmount" step="1000" required></div>
-                <div class="form-group"><label>Payment Date</label><input type="date" id="paymentDate" required></div>
-                <div class="form-group"><label>Notes</label><textarea id="paymentNotes" rows="2"></textarea></div>
-                <button type="submit" class="btn-primary" style="width:100%">Record Payment</button>
-            </form>
-        </div>
-    </div>
+    <div id="paymentModal" class="modal"><div class="modal-content"><div class="modal-header"><h3>Record Payment</h3><button class="close-modal" onclick="closeModal('paymentModal')">&times;</button></div>
+    <form id="paymentForm"><div class="form-group"><label>Activity</label><select id="paymentActivityId" required></select></div>
+    <div class="form-group"><label>Member</label><select id="paymentMemberId" required></select></div>
+    <div class="form-group"><label>Amount (UGX)</label><input type="number" id="paymentAmount" required></div>
+    <div class="form-group"><label>Date</label><input type="date" id="paymentDate" required></div>
+    <div class="form-group"><label>Notes</label><textarea id="paymentNotes" rows="2"></textarea></div>
+    <button type="submit" class="btn-primary">Record</button></form></div></div>
 
-    <div id="editActivityModal" class="modal">
-        <div class="modal-content">
-            <div class="modal-header"><h3><i class="fas fa-edit"></i> Edit Activity</h3><button class="close-modal" onclick="closeModal('editActivityModal')">&times;</button></div>
-            <form id="editActivityForm">
-                <input type="hidden" id="editActivityId">
-                <div class="form-group"><label>Activity Name</label><input type="text" id="editActivityName" required></div>
-                <div class="form-group"><label>Description</label><textarea id="editActivityDesc" rows="2"></textarea></div>
-                <div class="form-group"><label>Budget (UGX)</label><input type="number" id="editActivityBudget" step="1000" required></div>
-                <div class="form-group"><label>Due Date</label><input type="date" id="editActivityDueDate" required></div>
-                <div class="form-group"><label>Status</label><select id="editActivityStatus"><option value="active">Active</option><option value="completed">Completed</option></select></div>
-                <button type="submit" class="btn-primary" style="width:100%">Update</button>
-            </form>
-        </div>
-    </div>
+    <div id="editActivityModal" class="modal"><div class="modal-content"><div class="modal-header"><h3>Edit Activity</h3><button class="close-modal" onclick="closeModal('editActivityModal')">&times;</button></div>
+    <form id="editActivityForm"><input type="hidden" id="editActivityId">
+    <div class="form-group"><label>Name</label><input type="text" id="editActivityName" required></div>
+    <div class="form-group"><label>Description</label><textarea id="editActivityDesc" rows="2"></textarea></div>
+    <div class="form-group"><label>Budget</label><input type="number" id="editActivityBudget" required></div>
+    <div class="form-group"><label>Due Date</label><input type="date" id="editActivityDueDate" required></div>
+    <div class="form-group"><label>Status</label><select id="editActivityStatus"><option value="active">Active</option><option value="completed">Completed</option></select></div>
+    <button type="submit" class="btn-primary">Update</button></form></div></div>
 
-    <div id="shareModal" class="modal">
-        <div class="modal-content" style="max-width: 600px;">
-            <div class="modal-header"><h3><i class="fab fa-whatsapp"></i> Share Payment Progress</h3><button class="close-modal" onclick="closeModal('shareModal')">&times;</button></div>
-            <div id="shareContent"></div>
-            <div style="margin-top: 20px; display: flex; gap: 10px;">
-                <button onclick="sendWhatsAppToAll()" class="btn-whatsapp" style="flex:1"><i class="fab fa-whatsapp"></i> Send to All Members</button>
-                <button onclick="closeModal('shareModal')" class="btn-primary">Close</button>
-            </div>
-        </div>
-    </div>
+    <div id="shareModal" class="modal"><div class="modal-content"><div class="modal-header"><h3>Share Progress</h3><button class="close-modal" onclick="closeModal('shareModal')">&times;</button></div>
+    <div id="shareContent"></div><div style="margin-top:20px"><button onclick="sendWhatsAppToAll()" class="btn-whatsapp" style="width:100%">Send to All Members</button></div></div></div>
 
     <script>
+        let db = null;
+        let currentUser = null;
+        let currentRole = null;
+        let selectedRole = null;
+        let currentPage = 'dashboard';
 
-    // Data Storage
-let activities = [];
-let familyMembers = [];
-let currentUser = null;
-let currentRole = null;
-let selectedRole = null;
-let currentPage = 'dashboard';
-let charts = {};
-let shareMessage = '';
-
-// Initialize Data
-function initData() {
-    const savedActivities = localStorage.getItem('obunangwe_activities');
-    const savedMembers = localStorage.getItem('obunangwe_members');
-    
-    if (savedActivities) activities = JSON.parse(savedActivities);
-    if (savedMembers) familyMembers = JSON.parse(savedMembers);
-    
-    if (!familyMembers || familyMembers.length === 0) {
-        familyMembers = [
-            { id: 1, name: "John Okello", role: "parent", phone: "+256700000001", email: "john@family.com" },
-            { id: 2, name: "Sarah Okello", role: "parent", phone: "+256700000002", email: "sarah@family.com" },
-            { id: 3, name: "Emma Okello", role: "child", phone: "+256700000003", email: "emma@family.com" },
-            { id: 4, name: "Michael Okello", role: "child", phone: "+256700000004", email: "michael@family.com" }
-        ];
-        saveMembers();
-    }
-    
-    if (!activities || activities.length === 0) {
-        const amountPerPerson = 2500000 / familyMembers.length;
-        const sampleActivity = {
-            id: Date.now(),
-            name: "Family Trip to Lake Mburo",
-            description: "3-day vacation including transport, accommodation, and meals",
-            totalBudget: 2500000,
-            expectedCompletionDate: "2024-12-15",
-            status: "active",
-            memberPayments: familyMembers.map(m => ({
-                memberId: m.id,
-                memberName: m.name,
-                amountOwed: amountPerPerson,
-                amountPaid: 0,
-                payments: [],
-                status: 'unpaid'
-            }))
-        };
-        activities.push(sampleActivity);
-        saveActivities();
-    }
-}
-
-function saveActivities() { localStorage.setItem('obunangwe_activities', JSON.stringify(activities)); }
-function saveMembers() { localStorage.setItem('obunangwe_members', JSON.stringify(familyMembers)); }
-
-// Statistics Functions
-function getStatistics() {
-    const activeActivities = activities.filter(a => a.status === 'active').length;
-    const completedActivities = activities.filter(a => a.status === 'completed').length;
-    let totalCollected = 0, totalOwed = 0;
-    activities.forEach(a => {
-        a.memberPayments.forEach(mp => {
-            totalCollected += mp.amountPaid;
-            totalOwed += mp.amountOwed;
-        });
-    });
-    return { activeActivities, completedActivities, totalCollected, totalOwed };
-}
-
-function getUserStatistics(userId) {
-    let totalOwed = 0, totalPaid = 0;
-    activities.forEach(a => {
-        const mp = a.memberPayments.find(mp => mp.memberId === userId);
-        if (mp) {
-            totalOwed += mp.amountOwed;
-            totalPaid += mp.amountPaid;
-        }
-    });
-    return { totalOwed, totalPaid, balance: totalOwed - totalPaid };
-}
-
-// Communication Functions
-function sendSMS(phone, message) {
-    if (!phone) { Swal.fire('Error', 'No phone number', 'error'); return; }
-    window.location.href = `sms:${phone}?body=${encodeURIComponent(message)}`;
-}
-
-function sendWhatsApp(phone, message) {
-    if (!phone) { Swal.fire('Error', 'No phone number', 'error'); return; }
-    let cleanPhone = phone.replace(/\D/g, '');
-    if (!cleanPhone.startsWith('256')) cleanPhone = '256' + cleanPhone;
-    window.open(`https://wa.me/${cleanPhone}?text=${encodeURIComponent(message)}`, '_blank');
-}
-
-function makeCall(phone) {
-    if (!phone) { Swal.fire('Error', 'No phone number', 'error'); return; }
-    window.location.href = `tel:${phone}`;
-}
-
-// Share Full Progress (Admin only)
-function shareFullProgress() {
-    if (currentRole !== 'admin') {
-        Swal.fire('Access Denied', 'Only administrators can share payment progress', 'error');
-        return;
-    }
-    
-    let message = `📊 *OBUNANGWE BULAIIRE - PAYMENT PROGRESS REPORT* 📊\n\n`;
-    message += `📅 *Report Date:* ${new Date().toLocaleString()}\n`;
-    message += `👥 *Total Members:* ${familyMembers.length}\n`;
-    message += `🎯 *Total Activities:* ${activities.length}\n\n`;
-    message += `━═━═━═━═━═━═━\n\n`;
-    message += `*📋 ACTIVITY PAYMENT STATUS:*\n\n`;
-    
-    activities.forEach(a => {
-        const collected = a.memberPayments.reduce((s, mp) => s + mp.amountPaid, 0);
-        const progress = (collected / a.totalBudget * 100).toFixed(1);
-        const paidCount = a.memberPayments.filter(mp => mp.status === 'paid').length;
-        message += `🏷️ *${a.name}*\n`;
-        message += `   💰 Budget: UGX ${a.totalBudget.toLocaleString()}\n`;
-        message += `   ✅ Collected: UGX ${collected.toLocaleString()} (${progress}%)\n`;
-        message += `   👥 Paid: ${paidCount}/${a.memberPayments.length} members\n`;
-        message += `   📅 Due: ${new Date(a.expectedCompletionDate).toLocaleDateString()}\n\n`;
-    });
-    
-    message += `━═━═━═━═━═━═━\n\n`;
-    message += `*👥 MEMBER PAYMENT SUMMARY:*\n\n`;
-    
-    familyMembers.forEach(m => {
-        let totalOwed = 0, totalPaid = 0;
-        activities.forEach(a => {
-            const mp = a.memberPayments.find(mp => mp.memberId === m.id);
-            if (mp) {
-                totalOwed += mp.amountOwed;
-                totalPaid += mp.amountPaid;
+        // Initialize SQLite
+        async function initDatabase() {
+            const SQL = await initSqlJs({
+                locateFile: file => `https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/${file}`
+            });
+            db = new SQL.Database();
+            
+            // Create tables
+            db.run(`CREATE TABLE IF NOT EXISTS family_members (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, role TEXT, phone TEXT, email TEXT)`);
+            db.run(`CREATE TABLE IF NOT EXISTS activities (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, description TEXT, total_budget REAL, expected_completion_date TEXT, status TEXT)`);
+            db.run(`CREATE TABLE IF NOT EXISTS member_activities (id INTEGER PRIMARY KEY AUTOINCREMENT, activity_id INTEGER, member_id INTEGER, amount_owed REAL, amount_paid REAL, status TEXT)`);
+            db.run(`CREATE TABLE IF NOT EXISTS payments (id INTEGER PRIMARY KEY AUTOINCREMENT, activity_id INTEGER, member_id INTEGER, amount REAL, payment_date TEXT, notes TEXT)`);
+            db.run(`CREATE TABLE IF NOT EXISTS admin_settings (id INTEGER PRIMARY KEY AUTOINCREMENT, setting_key TEXT, setting_value TEXT)`);
+            
+            // Check if data exists
+            const memberCount = db.exec("SELECT COUNT(*) FROM family_members");
+            if (!memberCount.length || memberCount[0].values[0][0] === 0) {
+                db.run(`INSERT INTO family_members (name, role, phone, email) VALUES 
+                    ('John Okello', 'parent', '+256700000001', 'john@family.com'),
+                    ('Sarah Okello', 'parent', '+256700000002', 'sarah@family.com'),
+                    ('Emma Okello', 'child', '+256700000003', 'emma@family.com'),
+                    ('Michael Okello', 'child', '+256700000004', 'michael@family.com')`);
+                
+                db.run(`INSERT INTO activities (name, description, total_budget, expected_completion_date, status) VALUES 
+                    ('Family Trip to Lake Mburo', '3-day vacation', 2500000, '2024-12-15', 'active')`);
+                
+                const activityId = db.exec("SELECT last_insert_rowid()")[0].values[0][0];
+                const members = db.exec("SELECT id FROM family_members");
+                const amountOwed = 2500000 / 4;
+                members[0].values.forEach(m => {
+                    db.run(`INSERT INTO member_activities (activity_id, member_id, amount_owed, amount_paid, status) VALUES (${activityId}, ${m[0]}, ${amountOwed}, 0, 'unpaid')`);
+                });
             }
-        });
-        const balance = totalOwed - totalPaid;
-        message += `👤 *${m.name}*\n`;
-        message += `   💰 Owed: UGX ${totalOwed.toLocaleString()}\n`;
-        message += `   ✅ Paid: UGX ${totalPaid.toLocaleString()}\n`;
-        message += `   ⏳ Balance: UGX ${balance.toLocaleString()}\n`;
-        message += `   📊 Status: ${balance === 0 ? 'PAID ✅' : 'PENDING ❌'}\n\n`;
-    });
-    
-    message += `━═━═━═━═━═━═━\n\n`;
-    message += `📱 *OBUNANGWE BULAIIRE*\n`;
-    message += `Family Payment Management System\n`;
-    message += `Thank you for your cooperation! 🙏`;
-    
-    shareMessage = message;
-    document.getElementById('shareContent').innerHTML = `<pre style="white-space: pre-wrap; font-family: inherit; background: #f5f5f5; padding: 15px; border-radius: 10px; max-height: 400px; overflow-y: auto;">${message}</pre>`;
-    document.getElementById('shareModal').style.display = 'flex';
-}
-
-function sendWhatsAppToAll() {
-    familyMembers.forEach(member => {
-        if (member.phone) {
-            setTimeout(() => sendWhatsApp(member.phone, shareMessage), 500);
+            
+            const adminCheck = db.exec("SELECT * FROM admin_settings WHERE setting_key = 'admin_password'");
+            if (!adminCheck.length) {
+                db.run(`INSERT INTO admin_settings (setting_key, setting_value) VALUES ('admin_password', 'admin123')`);
+            }
         }
-    });
-    Swal.fire('Shared!', 'Payment progress sent to all family members via WhatsApp', 'success');
-    closeModal('shareModal');
-}
 
-// CRUD Operations (Admin only)
-function createActivity(name, desc, budget, dueDate) {
-    if (currentRole !== 'admin') { 
-        Swal.fire('Access Denied', 'Only administrators can create activities', 'error'); 
-        return false; 
-    }
-    
-    const amountPerPerson = budget / familyMembers.length;
-    const activity = {
-        id: Date.now(),
-        name: name,
-        description: desc,
-        totalBudget: parseFloat(budget),
-        expectedCompletionDate: dueDate,
-        status: "active",
-        memberPayments: familyMembers.map(m => ({
-            memberId: m.id,
-            memberName: m.name,
-            amountOwed: amountPerPerson,
-            amountPaid: 0,
-            payments: [],
-            status: 'unpaid'
-        }))
-    };
-    activities.push(activity);
-    saveActivities();
-    Swal.fire('Success!', 'Activity created successfully', 'success');
-    return true;
-}
+        function getFamilyMembers() {
+            const result = db.exec("SELECT id, name, role, phone, email FROM family_members");
+            return result.length ? result[0].values.map(r => ({ id: r[0], name: r[1], role: r[2], phone: r[3], email: r[4] })) : [];
+        }
 
-function updateActivity(id, name, desc, budget, dueDate, status) {
-    if (currentRole !== 'admin') { 
-        Swal.fire('Access Denied', 'Only administrators can edit activities', 'error'); 
-        return false; 
-    }
-    
-    const activity = activities.find(a => a.id === id);
-    if (activity) {
-        activity.name = name;
-        activity.description = desc;
-        activity.totalBudget = parseFloat(budget);
-        activity.expectedCompletionDate = dueDate;
-        activity.status = status;
-        
-        const newAmount = activity.totalBudget / familyMembers.length;
-        activity.memberPayments.forEach(mp => { mp.amountOwed = newAmount; });
-        saveActivities();
-        Swal.fire('Updated!', 'Activity updated successfully', 'success');
-        return true;
-    }
-    return false;
-}
+        function getActivities() {
+            const result = db.exec("SELECT id, name, description, total_budget, expected_completion_date, status FROM activities ORDER BY id DESC");
+            return result.length ? result[0].values.map(r => ({ id: r[0], name: r[1], description: r[2], totalBudget: r[3], expectedCompletionDate: r[4], status: r[5] })) : [];
+        }
 
-function deleteActivity(id) {
-    if (currentRole !== 'admin') { 
-        Swal.fire('Access Denied', 'Only administrators can delete activities', 'error'); 
-        return; 
-    }
-    
-    Swal.fire({ 
-        title: 'Delete Activity?', 
-        text: "This cannot be undone!", 
-        icon: 'warning', 
-        showCancelButton: true, 
-        confirmButtonColor: '#d33', 
-        confirmButtonText: 'Delete' 
-    }).then((result) => {
-        if (result.isConfirmed) {
-            activities = activities.filter(a => a.id !== id);
-            saveActivities();
+        function getMemberActivities(memberId) {
+            const result = db.exec(`SELECT ma.*, a.name FROM member_activities ma JOIN activities a ON ma.activity_id = a.id WHERE ma.member_id = ${memberId}`);
+            return result.length ? result[0].values.map(r => ({ id: r[0], activityId: r[1], memberId: r[2], amountOwed: r[3], amountPaid: r[4], status: r[5], activityName: r[6] })) : [];
+        }
+
+        function getMemberPayments(memberId) {
+            const result = db.exec(`SELECT p.*, a.name FROM payments p JOIN activities a ON p.activity_id = a.id WHERE p.member_id = ${memberId} ORDER BY p.payment_date DESC`);
+            return result.length ? result[0].values.map(r => ({ id: r[0], activityId: r[1], memberId: r[2], amount: r[3], paymentDate: r[4], notes: r[5], activityName: r[6] })) : [];
+        }
+
+        function getAllPayments() {
+            const result = db.exec(`SELECT p.*, a.name as aname, m.name as mname FROM payments p JOIN activities a ON p.activity_id = a.id JOIN family_members m ON p.member_id = m.id ORDER BY p.payment_date DESC`);
+            return result.length ? result[0].values.map(r => ({ id: r[0], amount: r[3], paymentDate: r[4], notes: r[5], activityName: r[6], memberName: r[7] })) : [];
+        }
+
+        function getStats() {
+            const active = db.exec("SELECT COUNT(*) FROM activities WHERE status='active'")[0]?.values[0][0] || 0;
+            const completed = db.exec("SELECT COUNT(*) FROM activities WHERE status='completed'")[0]?.values[0][0] || 0;
+            const collected = db.exec("SELECT SUM(amount) FROM payments")[0]?.values[0][0] || 0;
+            const owed = db.exec("SELECT SUM(amount_owed) FROM member_activities")[0]?.values[0][0] || 0;
+            return { active, completed, collected, owed };
+        }
+
+        function getUserStats(userId) {
+            const owed = db.exec(`SELECT SUM(amount_owed) FROM member_activities WHERE member_id = ${userId}`)[0]?.values[0][0] || 0;
+            const paid = db.exec(`SELECT SUM(amount_paid) FROM member_activities WHERE member_id = ${userId}`)[0]?.values[0][0] || 0;
+            return { owed, paid, balance: owed - paid };
+        }
+
+        // CRUD
+        function createActivity(name, desc, budget, due) {
+            if (currentRole !== 'admin') { Swal.fire('Access Denied', 'Only admins can create', 'error'); return false; }
+            const members = getFamilyMembers();
+            const amountOwed = budget / members.length;
+            db.run(`INSERT INTO activities (name, description, total_budget, expected_completion_date, status) VALUES (?,?,?,?,'active')`, [name, desc, budget, due]);
+            const activityId = db.exec("SELECT last_insert_rowid()")[0].values[0][0];
+            members.forEach(m => { db.run(`INSERT INTO member_activities (activity_id, member_id, amount_owed, amount_paid, status) VALUES (?,?,?,0,'unpaid')`, [activityId, m.id, amountOwed]); });
+            Swal.fire('Success', 'Activity created', 'success');
+            return true;
+        }
+
+        function updateActivity(id, name, desc, budget, due, status) {
+            if (currentRole !== 'admin') { Swal.fire('Access Denied', 'Only admins can edit', 'error'); return false; }
+            db.run(`UPDATE activities SET name=?, description=?, total_budget=?, expected_completion_date=?, status=? WHERE id=?`, [name, desc, budget, due, status, id]);
+            const members = getFamilyMembers();
+            const newAmount = budget / members.length;
+            db.run(`UPDATE member_activities SET amount_owed=? WHERE activity_id=?`, [newAmount, id]);
+            Swal.fire('Updated', 'Activity updated', 'success');
+            return true;
+        }
+
+        function deleteActivity(id) {
+            if (currentRole !== 'admin') { Swal.fire('Access Denied', 'Only admins can delete', 'error'); return; }
+            Swal.fire({ title: 'Delete?', text: 'Cannot undo!', icon: 'warning', showCancelButton: true, confirmButtonColor: '#d33', confirmButtonText: 'Delete' }).then(r => {
+                if (r.isConfirmed) { db.run(`DELETE FROM payments WHERE activity_id=${id}`); db.run(`DELETE FROM member_activities WHERE activity_id=${id}`); db.run(`DELETE FROM activities WHERE id=${id}`); renderCurrentPage(); Swal.fire('Deleted', '', 'success'); }
+            });
+        }
+
+        function addMember(name, role, phone, email) {
+            if (currentRole !== 'admin') { Swal.fire('Access Denied', 'Only admins can add', 'error'); return false; }
+            db.run(`INSERT INTO family_members (name, role, phone, email) VALUES (?,?,?,?)`, [name, role, phone, email]);
+            const memberId = db.exec("SELECT last_insert_rowid()")[0].values[0][0];
+            const activities = getActivities();
+            activities.forEach(a => {
+                if (a.status === 'active') {
+                    const members = getFamilyMembers();
+                    const newAmount = a.totalBudget / members.length;
+                    db.run(`UPDATE member_activities SET amount_owed=? WHERE activity_id=?`, [newAmount, a.id]);
+                    db.run(`INSERT INTO member_activities (activity_id, member_id, amount_owed, amount_paid, status) VALUES (?,?,?,0,'unpaid')`, [a.id, memberId, newAmount]);
+                }
+            });
+            Swal.fire('Success', `${name} added`, 'success');
+            return true;
+        }
+
+        function deleteMember(id) {
+            if (currentRole !== 'admin') { Swal.fire('Access Denied', 'Only admins can delete', 'error'); return; }
+            const hasPayments = db.exec(`SELECT COUNT(*) FROM payments WHERE member_id=${id}`)[0]?.values[0][0] || 0;
+            if (hasPayments > 0) { Swal.fire('Error', 'Member has payments', 'error'); return; }
+            Swal.fire({ title: 'Remove?', text: 'Remove this member?', icon: 'warning', showCancelButton: true, confirmButtonColor: '#d33', confirmButtonText: 'Remove' }).then(r => {
+                if (r.isConfirmed) { db.run(`DELETE FROM member_activities WHERE member_id=${id}`); db.run(`DELETE FROM family_members WHERE id=${id}`); renderCurrentPage(); Swal.fire('Removed', '', 'success'); }
+            });
+        }
+
+        function recordPayment(activityId, memberId, amount, date, notes) {
+            if (currentRole !== 'admin') { Swal.fire('Access Denied', 'Only admins can record', 'error'); return false; }
+            db.run(`INSERT INTO payments (activity_id, member_id, amount, payment_date, notes) VALUES (?,?,?,?,?)`, [activityId, memberId, amount, date, notes]);
+            const currentPaid = db.exec(`SELECT amount_paid FROM member_activities WHERE activity_id=${activityId} AND member_id=${memberId}`)[0]?.values[0][0] || 0;
+            const newPaid = currentPaid + amount;
+            const amountOwed = db.exec(`SELECT amount_owed FROM member_activities WHERE activity_id=${activityId} AND member_id=${memberId}`)[0]?.values[0][0] || 0;
+            const status = newPaid >= amountOwed ? 'paid' : (newPaid > 0 ? 'partial' : 'unpaid');
+            db.run(`UPDATE member_activities SET amount_paid=?, status=? WHERE activity_id=? AND member_id=?`, [newPaid, status, activityId, memberId]);
+            const allPaid = db.exec(`SELECT COUNT(*) as t, SUM(CASE WHEN status='paid' THEN 1 ELSE 0 END) as p FROM member_activities WHERE activity_id=${activityId}`)[0];
+            if (allPaid && allPaid.values[0][0] === allPaid.values[0][1]) { db.run(`UPDATE activities SET status='completed' WHERE id=${activityId}`); }
+            Swal.fire('Success', 'Payment recorded', 'success');
+            return true;
+        }
+
+        // Communication
+        function sendSMS(phone, msg) { if(phone) window.location.href = `sms:${phone}?body=${encodeURIComponent(msg)}`; }
+        function sendWhatsApp(phone, msg) { if(phone) { let p = phone.replace(/\D/g,''); if(!p.startsWith('256')) p='256'+p; window.open(`https://wa.me/${p}?text=${encodeURIComponent(msg)}`,'_blank'); } }
+        function makeCall(phone) { if(phone) window.location.href = `tel:${phone}`; }
+
+        function shareFullProgress() {
+            const members = getFamilyMembers();
+            const acts = getActivities();
+            const stats = getStats();
+            let msg = `📊 *OBUNANGWE BULAIIRE REPORT* 📊\n📅 ${new Date().toLocaleString()}\n👥 Members: ${members.length}\n💰 Collected: UGX ${stats.collected.toLocaleString()}\n\n`;
+            acts.forEach(a => { const collected = db.exec(`SELECT SUM(amount_paid) FROM member_activities WHERE activity_id=${a.id}`)[0]?.values[0][0] || 0; msg += `📌 ${a.name}: UGX ${collected.toLocaleString()}/${a.totalBudget.toLocaleString()}\n`; });
+            msg += `\n👤 MEMBERS:\n`;
+            members.forEach(m => { const s = getUserStats(m.id); msg += `${m.name}: Owed UGX ${s.owed.toLocaleString()} | Paid UGX ${s.paid.toLocaleString()}\n`; });
+            document.getElementById('shareContent').innerHTML = `<pre style="background:#f5f5f5;padding:15px;border-radius:10px;white-space:pre-wrap">${msg}</pre>`;
+            document.getElementById('shareModal').style.display = 'flex';
+        }
+
+        function sendWhatsAppToAll() { getFamilyMembers().forEach(m => { if(m.phone) sendWhatsApp(m.phone, shareMessage || 'Check OBUNANGWE BULAIIRE for payment updates'); }); Swal.fire('Shared', 'Messages sent', 'success'); closeModal('shareModal'); }
+
+        let shareMessage = '';
+
+        // Render Functions
+        function renderAdminDashboard() {
+            const stats = getStats();
+            const acts = getActivities();
+            document.getElementById('pageContent').innerHTML = `
+                <div class="stats-grid">
+                    <div class="stat-card" onclick="switchPage('activities')"><div class="stat-number">${stats.active}</div><h3>Active Activities</h3></div>
+                    <div class="stat-card" onclick="switchPage('activities')"><div class="stat-number">${stats.completed}</div><h3>Completed</h3></div>
+                    <div class="stat-card" onclick="switchPage('payments')"><div class="stat-number">UGX ${stats.collected.toLocaleString()}</div><h3>Total Collected</h3></div>
+                    <div class="stat-card" onclick="switchPage('reports')"><div class="stat-number">UGX ${(stats.owed - stats.collected).toLocaleString()}</div><h3>Pending</h3></div>
+                </div>
+                <div class="card"><h2>Recent Activities <button class="btn-whatsapp" onclick="shareFullProgress()"><i class="fab fa-whatsapp"></i> Share Progress</button></h2>
+                <table class="data-table"><thead><tr><th>Activity</th><th>Budget</th><th>Due Date</th><th>Status</th></tr></thead><tbody>
+                ${acts.slice(0,5).map(a => `<tr><td><strong>${a.name}</strong></td><td>UGX ${a.totalBudget.toLocaleString()}</td><td>${new Date(a.expectedCompletionDate).toLocaleDateString()}</td><td><span class="badge badge-${a.status}">${a.status}</span></td></tr>`).join('') || '<tr><td colspan="4">No activities</td></tr>'}
+                </tbody></tr></div>`;
+        }
+
+        function renderUserDashboard() {
+            const stats = getUserStats(currentUser.id);
+            const myActs = getMemberActivities(currentUser.id);
+            document.getElementById('pageContent').innerHTML = `
+                <div class="stats-grid">
+                    <div class="stat-card"><div class="stat-number">UGX ${stats.owed.toLocaleString()}</div><h3>My Total Owed</h3></div>
+                    <div class="stat-card"><div class="stat-number">UGX ${stats.paid.toLocaleString()}</div><h3>My Total Paid</h3></div>
+                    <div class="stat-card"><div class="stat-number">UGX ${stats.balance.toLocaleString()}</div><h3>My Balance</h3></div>
+                    <div class="stat-card"><div class="stat-number">${myActs.length}</div><h3>My Activities</h3></div>
+                </div>
+                <div class="card"><h2>My Activities</h2>
+                <table class="data-table"><thead><tr><th>Activity</th><th>My Share</th><th>I've Paid</th><th>Balance</th><th>Status</th></tr></thead><tbody>
+                ${myActs.map(a => `<tr><td>${a.activityName}</td><td>UGX ${a.amountOwed.toLocaleString()}</td><td>UGX ${a.amountPaid.toLocaleString()}</td><td>UGX ${(a.amountOwed - a.amountPaid).toLocaleString()}</td><td class="${(a.amountOwed - a.amountPaid) === 0 ? 'paid-status' : 'unpaid-status'}">${(a.amountOwed - a.amountPaid) === 0 ? '✅ Paid' : '❌ Pending'}</td></tr>`).join('') || '<td><td colspan="5">No activities</td></table>'}
+                </tbody></table></div>`;
+        }
+
+        function renderAdminActivities() {
+            const acts = getActivities();
+            document.getElementById('pageContent').innerHTML = `<div class="card"><h2>All Activities <button class="btn-primary" onclick="openAddModal()"><i class="fas fa-plus"></i> New Activity</button></h2>
+            <div class="activity-grid">${acts.map(a => { const collected = db.exec(`SELECT SUM(amount_paid) FROM member_activities WHERE activity_id=${a.id}`)[0]?.values[0][0] || 0; const progress = (collected / a.totalBudget * 100).toFixed(0);
+            return `<div class="activity-card"><h3>${a.name}</h3><p>${a.description || ''}</p><p>💰 UGX ${a.totalBudget.toLocaleString()}</p><p>📅 ${new Date(a.expectedCompletionDate).toLocaleDateString()}</p><div class="progress-bar-container"><div class="progress-bar" style="width:${progress}%">${progress}%</div></div><span class="badge badge-${a.status}">${a.status}</span><div style="margin-top:10px"><button class="btn-edit" onclick="openEditActivity(${a.id})">Edit</button> <button class="btn-danger" onclick="deleteActivity(${a.id})">Delete</button></div></div>`; }).join('') || '<p>No activities</p>'}</div></div>`;
+        }
+
+        function renderUserMyActivities() {
+            const myActs = getMemberActivities(currentUser.id);
+            document.getElementById('pageContent').innerHTML = `<div class="card"><h2>My Activities</h2>
+            <div class="activity-grid">${myActs.map(a => { const paidPercent = (a.amountPaid / a.amountOwed * 100).toFixed(0);
+            return `<div class="activity-card"><h3>${a.activityName}</h3><p>💰 My Share: UGX ${a.amountOwed.toLocaleString()}</p><p>✅ Paid: UGX ${a.amountPaid.toLocaleString()}</p><p>⏳ Remaining: UGX ${(a.amountOwed - a.amountPaid).toLocaleString()}</p><div class="progress-bar-container"><div class="progress-bar" style="width:${paidPercent}%">${paidPercent}% paid</div></div>${(a.amountOwed - a.amountPaid) === 0 ? '<span class="paid-status">✅ Fully paid!</span>' : '<span class="unpaid-status">❌ Pending</span>'}</div>`; }).join('') || '<p>No activities</p>'}</div></div>`;
+        }
+
+        function renderAdminMembers() {
+            const members = getFamilyMembers();
+            document.getElementById('pageContent').innerHTML = `<div class="card"><h2>Family Members <button class="btn-primary" onclick="openAddModal()"><i class="fas fa-plus"></i> Add Member</button></h2>
+            <table class="data-table"><thead><td><th>Name</th><th>Role</th><th>Phone</th><th>Email</th><th>Actions</th></tr></thead><tbody>
+            ${members.map(m => `<tr><td><strong>${m.name}</strong></td><td>${m.role === 'parent' ? 'Parent' : 'Child'}</td><td>${m.phone || '-'}</td><td>${m.email || '-'}</td><td><button class="btn-danger" onclick="deleteMember(${m.id})">Remove</button></td></tr>`).join('')}
+            </tbody><table></div>`;
+        }
+
+        function renderAdminPayments() {
+            const payments = getAllPayments();
+            document.getElementById('pageContent').innerHTML = `<div class="card"><h2>All Payments <button class="btn-primary" onclick="openAddModal()"><i class="fas fa-plus"></i> Record Payment</button></h2>
+            <table class="data-table"><thead><td><th>Date</th><th>Member</th><th>Activity</th><th>Amount</th><th>Notes</th></tr></thead><tbody>
+            ${payments.map(p => `<tr><td>${new Date(p.paymentDate).toLocaleDateString()}</td><td>${p.memberName}</td><td>${p.activityName}</td><td>UGX ${p.amount.toLocaleString()}</td><td>${p.notes || '-'}</td></td>`).join('') || '<tr><td colspan="5">No payments</td></tr>'}
+            </tbody></table></div>`;
+        }
+
+        function renderUserPayments() {
+            const payments = getMemberPayments(currentUser.id);
+            document.getElementById('pageContent').innerHTML = `<div class="card"><h2>My Payment History</h2>
+            <table class="data-table"><thead><tr><th>Date</th><th>Activity</th><th>Amount</th><th>Notes</th></tr></thead><tbody>
+            ${payments.map(p => `<tr><td>${new Date(p.paymentDate).toLocaleDateString()}</td><td>${p.activityName}</td><td>UGX ${p.amount.toLocaleString()}</td><td>${p.notes || '-'}</td></tr>`).join('') || '<tr><td colspan="4">No payments</td></tr>'}
+            </tbody></table></div>`;
+        }
+
+        function renderContacts() {
+            const members = getFamilyMembers();
+            document.getElementById('pageContent').innerHTML = `<div class="card"><h2>Family Contacts</h2>
+            ${members.map(m => `<div class="contact-card"><div><strong>${m.name}</strong><br>${m.role}<br>📞 ${m.phone || 'No phone'}</div><div>${m.phone ? `<button class="whatsapp-btn" onclick="sendWhatsApp('${m.phone}','Hello from OBUNANGWE BULAIIRE')">WhatsApp</button><button class="call-btn" onclick="makeCall('${m.phone}')">Call</button><button class="sms-btn" onclick="sendSMS('${m.phone}','Check your payment status')">SMS</button>` : 'No contact'}</div></div>`).join('')}</div>`;
+        }
+
+        function renderAdminReports() {
+            const stats = getStats();
+            const members = getFamilyMembers();
+            document.getElementById('pageContent').innerHTML = `
+                <div class="stats-grid"><div class="stat-card"><div class="stat-number">${members.length}</div><h3>Members</h3></div>
+                <div class="stat-card"><div class="stat-number">${getActivities().length}</div><h3>Activities</h3></div>
+                <div class="stat-card"><div class="stat-number">${stats.owed > 0 ? ((stats.collected / stats.owed * 100)).toFixed(1) : 0}%</div><h3>Progress</h3></div></div>
+                <div class="card"><h2>Member Summary <button class="btn-whatsapp" onclick="shareFullProgress()"><i class="fab fa-whatsapp"></i> Share Report</button></h2>
+                <table class="data-table"><thead><tr><th>Member</th><th>Owed</th><th>Paid</th><th>Balance</th><th>Status</th><th>Action</th></tr></thead><tbody>
+                ${members.map(m => { const s = getUserStats(m.id); return `<td><td><strong>${m.name}</strong></td><td>UGX ${s.owed.toLocaleString()}</td><td>UGX ${s.paid.toLocaleString()}</td><td class="${s.balance === 0 ? 'paid-status' : 'unpaid-status'}">UGX ${s.balance.toLocaleString()}</td><td>${s.balance === 0 ? '✅ Settled' : '❌ Pending'}</td><td>${m.phone && s.balance > 0 ? `<button class="sms-btn" onclick="sendSMS('${m.phone}','Reminder: Pending UGX ${s.balance.toLocaleString()}')">Remind</button>` : '-'}</td></td>`; }).join('')}
+                </tbody></table></div>`;
+        }
+
+        function renderUserReports() {
+            const stats = getUserStats(currentUser.id);
+            const myActs = getMemberActivities(currentUser.id);
+            document.getElementById('pageContent').innerHTML = `
+                <div class="stats-grid">
+                    <div class="stat-card"><div class="stat-number">UGX ${stats.owed.toLocaleString()}</div><h3>My Owed</h3></div>
+                    <div class="stat-card"><div class="stat-number">UGX ${stats.paid.toLocaleString()}</div><h3>My Paid</h3></div>
+                    <div class="stat-card"><div class="stat-number">UGX ${stats.balance.toLocaleString()}</div><h3>My Balance</h3></div>
+                </div>
+                <div class="card"><h2>My Activity Status</h2>
+                <div class="activity-grid">${myActs.map(a => { const paidPercent = (a.amountPaid / a.amountOwed * 100).toFixed(0);
+                return `<div class="activity-card"><h3>${a.activityName}</h3><p>💰 My Share: UGX ${a.amountOwed.toLocaleString()}</p><p>✅ Paid: UGX ${a.amountPaid.toLocaleString()}</p><div class="progress-bar-container"><div class="progress-bar" style="width:${paidPercent}%">${paidPercent}%</div></div>${(a.amountOwed - a.amountPaid) === 0 ? '<span class="paid-status">✅ Paid</span>' : '<span class="unpaid-status">❌ Pending</span>'}</div>`; }).join('') || '<p>No activities</p>'}</div></div>`;
+        }
+
+        function renderSecurity() {
+            document.getElementById('pageContent').innerHTML = `<div class="card"><h2>Security</h2><div style="text-align:center;padding:30px"><i class="fas fa-lock" style="font-size:48px;color:var(--primary-orange)"></i><p style="margin:20px">Change Admin Password</p><button class="btn-primary" onclick="changePassword()">Change Password</button></div></div>
+            <div class="card"><h2>System Info</h2><table class="data-table"><tr><td>Database</td><td>SQLite</td></tr><tr><td>Activities</td><td>${getActivities().length}</td></tr><tr><td>Members</td><td>${getFamilyMembers().length}</td></tr></table></div>`;
+        }
+
+        function renderCurrentPage() {
+            if (currentRole === 'admin') {
+                if (currentPage === 'dashboard') renderAdminDashboard();
+                else if (currentPage === 'activities') renderAdminActivities();
+                else if (currentPage === 'members') renderAdminMembers();
+                else if (currentPage === 'payments') renderAdminPayments();
+                else if (currentPage === 'contacts') renderContacts();
+                else if (currentPage === 'reports') renderAdminReports();
+                else if (currentPage === 'security') renderSecurity();
+                else renderAdminDashboard();
+            } else {
+                if (currentPage === 'dashboard') renderUserDashboard();
+                else if (currentPage === 'myactivities') renderUserMyActivities();
+                else if (currentPage === 'payments') renderUserPayments();
+                else if (currentPage === 'contacts') renderContacts();
+                else if (currentPage === 'reports') renderUserReports();
+                else renderUserDashboard();
+            }
+        }
+
+        function openAddModal() {
+            if (currentRole !== 'admin') { Swal.fire('Access Denied', 'Only admins can add', 'error'); return; }
+            if (currentPage === 'activities') document.getElementById('addActivityModal').style.display = 'flex';
+            else if (currentPage === 'members') document.getElementById('addMemberModal').style.display = 'flex';
+            else if (currentPage === 'payments') {
+                const acts = getActivities().filter(a => a.status === 'active');
+                const members = getFamilyMembers();
+                document.getElementById('paymentActivityId').innerHTML = acts.map(a => `<option value="${a.id}">${a.name}</option>`).join('');
+                document.getElementById('paymentMemberId').innerHTML = members.map(m => `<option value="${m.id}">${m.name}</option>`).join('');
+                document.getElementById('paymentModal').style.display = 'flex';
+                document.getElementById('paymentDate').value = new Date().toISOString().split('T')[0];
+            }
+        }
+
+        function openEditActivity(id) {
+            const a = getActivities().find(a => a.id === id);
+            document.getElementById('editActivityId').value = a.id;
+            document.getElementById('editActivityName').value = a.name;
+            document.getElementById('editActivityDesc').value = a.description || '';
+            document.getElementById('editActivityBudget').value = a.totalBudget;
+            document.getElementById('editActivityDueDate').value = a.expectedCompletionDate;
+            document.getElementById('editActivityStatus').value = a.status;
+            document.getElementById('editActivityModal').style.display = 'flex';
+        }
+
+        function closeModal(id) { document.getElementById(id).style.display = 'none'; }
+
+        function changePassword() {
+            Swal.fire({ title: 'Change Password', html: '<input id="np" class="swal2-input" placeholder="New Password"><input id="cp" class="swal2-input" placeholder="Confirm">', preConfirm: () => { const np = document.getElementById('np').value; const cp = document.getElementById('cp').value; if (np !== cp) { Swal.showValidationMessage('Passwords do not match'); return false; } if (np.length < 4) { Swal.showValidationMessage('Min 4 characters'); return false; } return np; } }).then(r => { if (r.isConfirmed) { db.run(`UPDATE admin_settings SET setting_value = ? WHERE setting_key = 'admin_password'`, [r.value]); Swal.fire('Success', 'Password changed', 'success'); } });
+        }
+
+        function switchPage(page) {
+            currentPage = page;
+            document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
+            if (event && event.target) event.target.closest('.nav-item')?.classList.add('active');
+            const titles = { dashboard: 'Dashboard', myactivities: 'My Activities', activities: 'Activities', members: 'Members', payments: 'Payments', contacts: 'Contacts', reports: 'Reports', security: 'Security' };
+            document.getElementById('pageTitle').innerHTML = `<i class="fas ${getIcon(page)}"></i> ${titles[page]}`;
+            const fab = document.getElementById('fabButton');
+            if (currentRole === 'admin' && (page === 'activities' || page === 'members' || page === 'payments')) fab.style.display = 'flex';
+            else fab.style.display = 'none';
             renderCurrentPage();
-            Swal.fire('Deleted!', 'Activity has been deleted.', 'success');
         }
-    });
-}
 
-function addMember(name, role, phone, email) {
-    if (currentRole !== 'admin') { 
-        Swal.fire('Access Denied', 'Only administrators can add members', 'error'); 
-        return false; 
-    }
-    
-    const member = { id: Date.now(), name: name, role: role, phone: phone, email: email };
-    familyMembers.push(member);
-    
-    activities.forEach(activity => {
-        if (activity.status === 'active') {
-            const newAmount = activity.totalBudget / familyMembers.length;
-            activity.memberPayments.forEach(mp => { mp.amountOwed = newAmount; });
-            activity.memberPayments.push({
-                memberId: member.id, memberName: member.name,
-                amountOwed: newAmount, amountPaid: 0, payments: [], status: 'unpaid'
-            });
+        function getIcon(p) { const icons = { dashboard: 'fa-tachometer-alt', myactivities: 'fa-list', activities: 'fa-tasks', members: 'fa-users', payments: 'fa-money-bill-wave', contacts: 'fa-address-book', reports: 'fa-chart-bar', security: 'fa-shield-alt' }; return icons[p] || 'fa-folder'; }
+
+        function toggleSidebar() { document.getElementById('sidebar').classList.toggle('collapsed'); document.querySelector('.main-content').classList.toggle('expanded'); }
+
+        function selectRole(role) {
+            selectedRole = role;
+            document.getElementById('adminRoleBtn').style.borderColor = role === 'admin' ? '#ff862d' : '#e0e0e0';
+            document.getElementById('userRoleBtn').style.borderColor = role === 'user' ? '#ff862d' : '#e0e0e0';
+            document.getElementById('adminPasswordDiv').style.display = role === 'admin' ? 'block' : 'none';
+            document.getElementById('userSelectDiv').style.display = role === 'user' ? 'block' : 'none';
+            if (role === 'user') { const members = getFamilyMembers(); document.getElementById('userSelect').innerHTML = '<option value="">Select...</option>' + members.map(m => `<option value="${m.id}">${m.name}</option>`).join(''); }
         }
-    });
-    saveMembers();
-    saveActivities();
-    Swal.fire('Success!', `${name} added to family`, 'success');
-    return true;
-}
 
-function deleteMember(id) {
-    if (currentRole !== 'admin') { 
-        Swal.fire('Access Denied', 'Only administrators can delete members', 'error'); 
-        return; 
-    }
-    
-    const hasPayments = activities.some(a => a.memberPayments.some(mp => mp.memberId === id && mp.amountPaid > 0));
-    if (hasPayments) { 
-        Swal.fire('Error!', 'Cannot delete member with payment records', 'error'); 
-        return; 
-    }
-    
-    Swal.fire({ 
-        title: 'Remove Member?', 
-        text: "Remove this family member?", 
-        icon: 'warning', 
-        showCancelButton: true, 
-        confirmButtonColor: '#d33', 
-        confirmButtonText: 'Remove' 
-    }).then((result) => {
-        if (result.isConfirmed) {
-            familyMembers = familyMembers.filter(m => m.id !== id);
-            activities.forEach(a => { a.memberPayments = a.memberPayments.filter(mp => mp.memberId !== id); });
-            saveMembers();
-            saveActivities();
-            renderCurrentPage();
-            Swal.fire('Removed!', 'Member has been removed.', 'success');
+        function confirmLogin() {
+            const storedPwd = db.exec("SELECT setting_value FROM admin_settings WHERE setting_key='admin_password'")[0]?.values[0][0] || 'admin123';
+            if (selectedRole === 'admin') {
+                const pwd = document.getElementById('adminPassword').value;
+                if (pwd === storedPwd) { currentRole = 'admin'; currentUser = { id: 0, name: 'Admin' }; showAdminDashboard(); }
+                else { Swal.fire('Error', 'Invalid password', 'error'); }
+            } else if (selectedRole === 'user') {
+                const uid = parseInt(document.getElementById('userSelect').value);
+                if (!uid) { Swal.fire('Error', 'Select your name', 'error'); return; }
+                const user = getFamilyMembers().find(m => m.id === uid);
+                if (user) { currentRole = 'user'; currentUser = user; showUserDashboard(); }
+                else { Swal.fire('Error', 'User not found', 'error'); }
+            } else { Swal.fire('Error', 'Select a role', 'error'); }
         }
-    });
-}
 
-function recordPayment(activityId, memberId, amount, date, notes) {
-    if (currentRole !== 'admin') { 
-        Swal.fire('Access Denied', 'Only administrators can record payments', 'error'); 
-        return false; 
-    }
-    
-    const activity = activities.find(a => a.id === activityId);
-    const memberPayment = activity.memberPayments.find(mp => mp.memberId === memberId);
-    
-    memberPayment.payments.push({ id: Date.now(), amount: parseFloat(amount), date: date, notes: notes });
-    memberPayment.amountPaid += parseFloat(amount);
-    memberPayment.status = memberPayment.amountPaid >= memberPayment.amountOwed ? 'paid' : (memberPayment.amountPaid > 0 ? 'partial' : 'unpaid');
-    
-    const allPaid = activity.memberPayments.every(mp => mp.status === 'paid');
-    if (allPaid && activity.status === 'active') activity.status = 'completed';
-    
-    saveActivities();
-    Swal.fire('Success!', 'Payment recorded successfully', 'success');
-    return true;
-}
-
-// Render Functions
-function renderAdminDashboard() {
-    const stats = getStatistics();
-    document.getElementById('pageContent').innerHTML = `
-        <div class="stats-grid">
-            <div class="stat-card" onclick="switchPage('activities')"><div class="stat-number">${stats.activeActivities}</div><h3>Active Activities</h3></div>
-            <div class="stat-card" onclick="switchPage('activities')"><div class="stat-number">${stats.completedActivities}</div><h3>Completed</h3></div>
-            <div class="stat-card" onclick="switchPage('payments')"><div class="stat-number">UGX ${stats.totalCollected.toLocaleString()}</div><h3>Total Collected</h3></div>
-            <div class="stat-card" onclick="switchPage('reports')"><div class="stat-number">UGX ${(stats.totalOwed - stats.totalCollected).toLocaleString()}</div><h3>Pending</h3></div>
-        </div>
-        <div class="card"><h2>Recent Activities <button class="btn-whatsapp" onclick="shareFullProgress()"><i class="fab fa-whatsapp"></i> Share Full Progress</button></h2>
-        <table class="data-table"><thead><tr><th>Activity</th><th>Budget</th><th>Due Date</th><th>Progress</th><th>Status</th></tr></thead><tbody>
-        ${activities.slice(0,5).map(a => {
-            const collected = a.memberPayments.reduce((s, mp) => s + mp.amountPaid, 0);
-            const progress = (collected / a.totalBudget * 100).toFixed(0);
-            return `<tr>
-                <td><strong>${a.name}</strong></td>
-                <td>UGX ${a.totalBudget.toLocaleString()}</td>
-                <td>${new Date(a.expectedCompletionDate).toLocaleDateString()}</td>
-                <td><div class="progress-bar-container" style="width:80px"><div class="progress-bar" style="width:${progress}%">${progress}%</div></div></td>
-                <td><span class="badge badge-${a.status}">${a.status}</span></td>
-            </tr>`;
-        }).join('') || '<td><td colspan="5">No activities</td></td>'}
-        </tbody></table></div>`;
-}
-
-function renderUserDashboard() {
-    const userStats = getUserStatistics(currentUser.id);
-    const userActivities = activities.filter(a => a.status === 'active');
-    
-    document.getElementById('pageContent').innerHTML = `
-        <div class="stats-grid">
-            <div class="stat-card"><div class="stat-number">UGX ${userStats.totalOwed.toLocaleString()}</div><h3>My Total Owed</h3></div>
-            <div class="stat-card"><div class="stat-number">UGX ${userStats.totalPaid.toLocaleString()}</div><h3>My Total Paid</h3></div>
-            <div class="stat-card"><div class="stat-number">UGX ${userStats.balance.toLocaleString()}</div><h3>My Balance</h3></div>
-            <div class="stat-card"><div class="stat-number">${userActivities.length}</div><h3>Active Activities</h3></div>
-        </div>
-        <div class="card"><h2>My Recent Activities</h2>
-        <table class="data-table"><thead><tr><th>Activity</th><th>My Share (UGX)</th><th>I've Paid (UGX)</th><th>My Balance (UGX)</th><th>Due Date</th><th>Status</th></tr></thead><tbody>
-        ${activities.slice(0,5).map(a => {
-            const mp = a.memberPayments.find(mp => mp.memberId === currentUser.id);
-            if (!mp) return '';
-            const balance = mp.amountOwed - mp.amountPaid;
-            return `<tr>
-                <td><strong>${a.name}</strong></td>
-                <td>UGX ${mp.amountOwed.toLocaleString()}</td>
-                <td>UGX ${mp.amountPaid.toLocaleString()}</td>
-                <td>UGX ${balance.toLocaleString()}</td>
-                <td>${new Date(a.expectedCompletionDate).toLocaleDateString()}</td>
-                <td><span class="${balance === 0 ? 'paid-status' : 'unpaid-status'}">${balance === 0 ? '✅ Paid' : '❌ Pending'}</span></td>
-            </tr>`;
-        }).join('') || '<tr><td colspan="6">No activities assigned</td></tr>'}
-        </tbody></table></div>`;
-}
-
-function renderAdminActivities() {
-    document.getElementById('pageContent').innerHTML = `<div class="card"><h2>All Activities <button class="btn-primary" onclick="openAddModal()" style="margin-left:10px"><i class="fas fa-plus"></i> New Activity</button></h2>
-    <div class="activity-grid">${activities.map(a => {
-        const collected = a.memberPayments.reduce((s, mp) => s + mp.amountPaid, 0);
-        const progress = (collected / a.totalBudget * 100).toFixed(0);
-        return `<div class="activity-card">
-            <h3>${a.name}</h3>
-            <p>${a.description || 'No description'}</p>
-            <p>💰 Budget: UGX ${a.totalBudget.toLocaleString()}</p>
-            <p>📅 Due: ${new Date(a.expectedCompletionDate).toLocaleDateString()}</p>
-            <div class="progress-bar-container"><div class="progress-bar" style="width:${progress}%">${progress}%</div></div>
-            <span class="badge badge-${a.status}">${a.status}</span>
-            <div style="margin-top:10px">
-                <button class="btn-edit" onclick="openEditActivity(${a.id})"><i class="fas fa-edit"></i> Edit</button>
-                <button class="btn-danger" onclick="deleteActivity(${a.id})"><i class="fas fa-trash"></i> Delete</button>
-            </div>
-        </div>`;
-    }).join('') || '<p>No activities created yet</p>'}</div></div>`;
-}
-
-function renderUserMyActivities() {
-    const userActivities = activities.filter(a => a.status === 'active');
-    document.getElementById('pageContent').innerHTML = `
-        <div class="card"><h2><i class="fas fa-list"></i> My Activities</h2>
-        <div class="activity-grid">${userActivities.map(a => {
-            const mp = a.memberPayments.find(mp => mp.memberId === currentUser.id);
-            if (!mp) return '';
-            const balance = mp.amountOwed - mp.amountPaid;
-            const paidPercent = (mp.amountPaid / mp.amountOwed * 100).toFixed(0);
-            return `<div class="activity-card">
-                <h3>${a.name}</h3>
-                <p>${a.description || 'No description'}</p>
-                <p>💰 Total Activity Budget: UGX ${a.totalBudget.toLocaleString()}</p>
-                <p>👤 My Share: UGX ${mp.amountOwed.toLocaleString()}</p>
-                <p>✅ I've Paid: UGX ${mp.amountPaid.toLocaleString()}</p>
-                <p>⏳ My Remaining: UGX ${balance.toLocaleString()}</p>
-                <div class="progress-bar-container"><div class="progress-bar" style="width:${paidPercent}%">${paidPercent}% of my share paid</div></div>
-                <p style="margin-top:10px; font-size:12px; color:#666;">📅 Due: ${new Date(a.expectedCompletionDate).toLocaleDateString()}</p>
-                ${balance === 0 ? '<span class="paid-status"><i class="fas fa-check-circle"></i> I have fully paid my share!</span>' : '<span class="unpaid-status"><i class="fas fa-clock"></i> Payment pending</span>'}
-            </div>`;
-        }).join('') || '<p>No active activities assigned to you</p>'}</div></div>`;
-}
-
-function renderAdminMembers() {
-    document.getElementById('pageContent').innerHTML = `<div class="card"><h2>Family Members <button class="btn-primary" onclick="openAddModal()" style="margin-left:10px"><i class="fas fa-plus"></i> Add Member</button></h2>
-    <table class="data-table"><thead><tr><th>Avatar</th><th>Name</th><th>Role</th><th>Phone</th><th>Email</th><th>Total Owed</th><th>Total Paid</th><th>Balance</th><th>Actions</th></tr></thead><tbody>
-    ${familyMembers.map(m => {
-        let totalOwed = 0, totalPaid = 0;
-        activities.forEach(a => {
-            const mp = a.memberPayments.find(mp => mp.memberId === m.id);
-            if (mp) { totalOwed += mp.amountOwed; totalPaid += mp.amountPaid; }
-        });
-        const balance = totalOwed - totalPaid;
-        return `<tr>
-            <td><span style="font-size:24px">${m.role === 'parent' ? '👨‍👩' : '🧒'}</span></td>
-            <td><strong>${m.name}</strong></td>
-            <td>${m.role === 'parent' ? 'Parent' : 'Child'}</td>
-            <td>${m.phone || '-'}</td>
-            <td>${m.email || '-'}</td>
-            <td>UGX ${totalOwed.toLocaleString()}</td>
-            <td>UGX ${totalPaid.toLocaleString()}</td>
-            <td class="${balance === 0 ? 'paid-status' : 'unpaid-status'}">UGX ${balance.toLocaleString()}</td>
-            <td><button class="btn-danger" onclick="deleteMember(${m.id})"><i class="fas fa-trash"></i> Remove</button></td>
-        </tr>`;
-    }).join('')}
-    </tbody></table></div>`;
-}
-
-function renderAdminPayments() {
-    let allPayments = [];
-    activities.forEach(a => {
-        a.memberPayments.forEach(mp => {
-            mp.payments.forEach(p => {
-                allPayments.push({...p, activityName: a.name, memberName: mp.memberName});
-            });
-        });
-    });
-    document.getElementById('pageContent').innerHTML = `<div class="card"><h2>All Payment Transactions <button class="btn-primary" onclick="openAddModal()" style="margin-left:10px"><i class="fas fa-plus"></i> Record Payment</button></h2>
-    <table class="data-table"><thead><tr><th>Date</th><th>Member</th><th>Activity</th><th>Amount (UGX)</th><th>Notes</th></tr></thead><tbody>
-    ${allPayments.sort((a,b)=>new Date(b.date)-new Date(a.date)).map(p => `
-        <tr>
-            <td>${new Date(p.date).toLocaleDateString()}</td>
-            <td>${p.memberName}</td>
-            <td>${p.activityName}</td>
-            <td>UGX ${p.amount.toLocaleString()}</td>
-            <td>${p.notes || '-'}</td>
-        </tr>
-    `).join('') || '<tr><td colspan="5">No payments recorded yet</td></tr>'}
-    </tbody></table></div>`;
-}
-
-function renderUserPayments() {
-    let userPayments = [];
-    activities.forEach(a => {
-        const mp = a.memberPayments.find(mp => mp.memberId === currentUser.id);
-        if (mp) {
-            mp.payments.forEach(p => {
-                userPayments.push({...p, activityName: a.name});
-            });
+        function showAdminDashboard() {
+            document.getElementById('loginScreen').style.display = 'none';
+            document.getElementById('appContainer').style.display = 'block';
+            document.getElementById('userNameDisplay').innerHTML = '👑 Administrator';
+            document.getElementById('roleBadge').innerHTML = 'Full Access';
+            document.getElementById('sidebarUserName').innerHTML = 'Admin';
+            document.getElementById('viewOnlyBanner').style.display = 'none';
+            document.getElementById('fabButton').style.display = 'flex';
+            document.getElementById('myActivitiesNav').style.display = 'none';
+            document.getElementById('activitiesNav').style.display = 'flex';
+            document.getElementById('membersNav').style.display = 'flex';
+            document.getElementById('paymentsNav').style.display = 'flex';
+            document.getElementById('reportsNav').style.display = 'flex';
+            document.getElementById('securityNav').style.display = 'flex';
+            currentPage = 'dashboard'; renderCurrentPage();
+            document.querySelector('.nav-item[onclick="switchPage(\'dashboard\')"]')?.classList.add('active');
         }
-    });
-    document.getElementById('pageContent').innerHTML = `<div class="card"><h2><i class="fas fa-history"></i> My Payment History</h2>
-    <table class="data-table"><thead><tr><th>Date</th><th>Activity</th><th>Amount Paid (UGX)</th><th>Notes</th></tr></thead><tbody>
-    ${userPayments.sort((a,b)=>new Date(b.date)-new Date(a.date)).map(p => `
-        <tr>
-            <td>${new Date(p.date).toLocaleDateString()}</td>
-            <td>${p.activityName}</td>
-            <td>UGX ${p.amount.toLocaleString()}</td>
-            <td>${p.notes || '-'}</td>
-        </tr>
-    `).join('') || '<tr><td colspan="4">No payment history yet</td></tr>'}
-    </tbody></table></div>`;
-}
 
-function renderContacts() {
-    document.getElementById('pageContent').innerHTML = `<div class="card"><h2><i class="fas fa-address-book"></i> Family Contacts Directory</h2>
-    ${familyMembers.map(m => `
-        <div class="contact-card">
-            <div>
-                <span style="font-size:32px">${m.role === 'parent' ? '👨‍👩' : '🧒'}</span><br>
-                <strong>${m.name}</strong><br>
-                ${m.role === 'parent' ? 'Parent' : 'Child'}<br>
-                📞 ${m.phone || 'No phone'}
-            </div>
-            <div>
-                ${m.phone ? `
-                    <button class="whatsapp-btn" onclick="sendWhatsApp('${m.phone}', 'Hello ${m.name} from OBUNANGWE BULAIIRE! Check your payment status.')"><i class="fab fa-whatsapp"></i> WhatsApp</button>
-                    <button class="call-btn" onclick="makeCall('${m.phone}')"><i class="fas fa-phone"></i> Call</button>
-                    <button class="sms-btn" onclick="sendSMS('${m.phone}', 'Hello ${m.name}, please check the family payment tracker for updates.')"><i class="fas fa-envelope"></i> SMS</button>
-                ` : '<span>No contact info</span>'}
-            </div>
-        </div>
-    `).join('')}</div>`;
-}
-
-function renderAdminReports() {
-    const stats = getStatistics();
-    const memberData = [];
-    
-    for (const m of familyMembers) {
-        let totalOwed = 0, totalPaid = 0;
-        activities.forEach(a => {
-            const mp = a.memberPayments.find(mp => mp.memberId === m.id);
-            if (mp) { totalOwed += mp.amountOwed; totalPaid += mp.amountPaid; }
-        });
-        memberData.push({ ...m, totalOwed, totalPaid, balance: totalOwed - totalPaid });
-    }
-    
-    setTimeout(() => {
-        const paymentCtx = document.getElementById('paymentChart')?.getContext('2d');
-        if (paymentCtx) {
-            if (charts.paymentChart) charts.paymentChart.destroy();
-            charts.paymentChart = new Chart(paymentCtx, {
-                type: 'doughnut',
-                data: { labels: ['Collected', 'Pending'], datasets: [{ data: [stats.totalCollected, stats.totalOwed - stats.totalCollected], backgroundColor: ['#ff862d', '#01605a'], borderWidth: 0 }] },
-                options: { responsive: true, plugins: { legend: { position: 'bottom' } } }
-            });
+        function showUserDashboard() {
+            document.getElementById('loginScreen').style.display = 'none';
+            document.getElementById('appContainer').style.display = 'block';
+            document.getElementById('userNameDisplay').innerHTML = `👤 ${currentUser.name}`;
+            document.getElementById('roleBadge').innerHTML = 'View Only';
+            document.getElementById('sidebarUserName').innerHTML = currentUser.name;
+            document.getElementById('viewOnlyBanner').style.display = 'block';
+            document.getElementById('fabButton').style.display = 'none';
+            document.getElementById('myActivitiesNav').style.display = 'flex';
+            document.getElementById('activitiesNav').style.display = 'none';
+            document.getElementById('membersNav').style.display = 'none';
+            document.getElementById('paymentsNav').style.display = 'flex';
+            document.getElementById('reportsNav').style.display = 'flex';
+            document.getElementById('securityNav').style.display = 'none';
+            currentPage = 'dashboard'; renderCurrentPage();
+            document.querySelector('.nav-item[onclick="switchPage(\'dashboard\')"]')?.classList.add('active');
         }
-        
-        const memberCtx = document.getElementById('memberChart')?.getContext('2d');
-        if (memberCtx) {
-            if (charts.memberChart) charts.memberChart.destroy();
-            charts.memberChart = new Chart(memberCtx, {
-                type: 'bar',
-                data: { labels: memberData.map(m => m.name), datasets: [{ label: 'Paid (UGX)', data: memberData.map(m => m.totalPaid), backgroundColor: '#27ae60' }, { label: 'Owed (UGX)', data: memberData.map(m => m.totalOwed), backgroundColor: '#e74c3c' }] },
-                options: { responsive: true, scales: { y: { beginAtZero: true } } }
-            });
+
+        function logout() {
+            currentRole = null; currentUser = null;
+            document.getElementById('appContainer').style.display = 'none';
+            document.getElementById('loginScreen').style.display = 'block';
+            document.getElementById('adminPassword').value = '';
+            document.getElementById('userSelect').value = '';
         }
-    }, 100);
-    
-    document.getElementById('pageContent').innerHTML = `
-        <div class="stats-grid">
-            <div class="stat-card"><div class="stat-number">${familyMembers.length}</div><h3>Family Members</h3></div>
-            <div class="stat-card"><div class="stat-number">${activities.length}</div><h3>Total Activities</h3></div>
-            <div class="stat-card"><div class="stat-number">${stats.totalOwed > 0 ? ((stats.totalCollected / stats.totalOwed * 100)).toFixed(1) : 0}%</div><h3>Overall Progress</h3></div>
-        </div>
-        <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(400px,1fr)); gap:20px;">
-            <div class="card"><h2><i class="fas fa-chart-pie"></i> Payment Collection</h2><div class="chart-container"><canvas id="paymentChart"></canvas></div></div>
-            <div class="card"><h2><i class="fas fa-chart-bar"></i> Member Summary</h2><div class="chart-container"><canvas id="memberChart"></canvas></div></div>
-        </div>
-        <div class="card"><h2><i class="fas fa-table"></i> Member Financial Summary <button class="btn-whatsapp" onclick="shareFullProgress()"><i class="fab fa-whatsapp"></i> Share Report</button></h2>
-        <table class="data-table"><thead><tr><th>Member</th><th>Total Owed (UGX)</th><th>Total Paid (UGX)</th><th>Balance (UGX)</th><th>Status</th><th>Action</th></tr></thead><tbody>
-        ${memberData.map(m => `
-            <tr>
-                <td><strong>${m.name}</strong></td>
-                <td>UGX ${m.totalOwed.toLocaleString()}</td>
-                <td>UGX ${m.totalPaid.toLocaleString()}</td>
-                <td class="${m.balance === 0 ? 'paid-status' : 'unpaid-status'}">UGX ${m.balance.toLocaleString()}</td>
-                <td>${m.balance === 0 ? '✅ Settled' : '❌ Pending'}</td>
-                <td>${m.phone && m.balance > 0 ? `<button class="sms-btn" onclick="sendSMS('${m.phone}', 'Reminder: You have a pending balance of UGX ${m.balance.toLocaleString()} for family activities.')"><i class="fas fa-envelope"></i> Remind</button>` : '-'}</td>
-            </tr>
-        `).join('')}
-        </tbody></table></div>`;
-}
 
-function renderUserReports() {
-    const userStats = getUserStatistics(currentUser.id);
-    const userActivities = [];
-    
-    for (const a of activities) {
-        const mp = a.memberPayments.find(mp => mp.memberId === currentUser.id);
-        if (mp) {
-            userActivities.push({ ...a, userShare: mp.amountOwed, userPaid: mp.amountPaid, userBalance: mp.amountOwed - mp.amountPaid });
-        }
-    }
-    
-    document.getElementById('pageContent').innerHTML = `
-        <div class="stats-grid">
-            <div class="stat-card"><div class="stat-number">UGX ${userStats.totalOwed.toLocaleString()}</div><h3>My Total Owed</h3></div>
-            <div class="stat-card"><div class="stat-number">UGX ${userStats.totalPaid.toLocaleString()}</div><h3>My Total Paid</h3></div>
-            <div class="stat-card"><div class="stat-number">UGX ${userStats.balance.toLocaleString()}</div><h3>My Balance</h3></div>
-        </div>
-        <div class="card"><h2><i class="fas fa-chart-line"></i> My Activity Payment Status</h2>
-        <div class="activity-grid">${userActivities.map(a => {
-            const paidPercent = (a.userPaid / a.userShare * 100).toFixed(0);
-            return `<div class="activity-card">
-                <h3>${a.name}</h3>
-                <p>💰 Total Activity Budget: UGX ${a.totalBudget.toLocaleString()}</p>
-                <p>👤 My Share: UGX ${a.userShare.toLocaleString()}</p>
-                <p>✅ I've Paid: UGX ${a.userPaid.toLocaleString()}</p>
-                <p>⏳ My Balance: UGX ${a.userBalance.toLocaleString()}</p>
-                <div class="progress-bar-container"><div class="progress-bar" style="width:${paidPercent}%">${paidPercent}% of my share paid</div></div>
-                <p style="margin-top:10px; font-size:12px;">📅 Due: ${new Date(a.expectedCompletionDate).toLocaleDateString()}</p>
-                ${a.userBalance === 0 ? '<span class="paid-status"><i class="fas fa-check-circle"></i> Fully paid! 🎉</span>' : '<span class="unpaid-status"><i class="fas fa-clock"></i> Payment pending</span>'}
-            </div>`;
-        }).join('') || '<p>No activities assigned to you</p>'}</div></div>`;
-}
+        // Event Listeners
+        document.getElementById('addActivityForm')?.addEventListener('submit', (e) => { e.preventDefault(); if (createActivity(activityName.value, activityDesc.value, parseFloat(activityBudget.value), activityDueDate.value)) { closeModal('addActivityModal'); e.target.reset(); renderCurrentPage(); } });
+        document.getElementById('addMemberForm')?.addEventListener('submit', (e) => { e.preventDefault(); if (addMember(memberName.value, memberRole.value, memberPhone.value, memberEmail.value)) { closeModal('addMemberModal'); e.target.reset(); renderCurrentPage(); } });
+        document.getElementById('paymentForm')?.addEventListener('submit', (e) => { e.preventDefault(); if (recordPayment(parseInt(paymentActivityId.value), parseInt(paymentMemberId.value), parseFloat(paymentAmount.value), paymentDate.value, paymentNotes.value)) { closeModal('paymentModal'); e.target.reset(); renderCurrentPage(); } });
+        document.getElementById('editActivityForm')?.addEventListener('submit', (e) => { e.preventDefault(); if (updateActivity(parseInt(editActivityId.value), editActivityName.value, editActivityDesc.value, parseFloat(editActivityBudget.value), editActivityDueDate.value, editActivityStatus.value)) { closeModal('editActivityModal'); renderCurrentPage(); } });
 
-function renderSecurity() {
-    document.getElementById('pageContent').innerHTML = `
-        <div class="card"><h2><i class="fas fa-shield-alt"></i> Security Settings</h2>
-        <div style="text-align:center;padding:30px">
-            <i class="fas fa-lock" style="font-size:48px;color:var(--primary-orange)"></i>
-            <p style="margin:20px">Change your administrator password to keep your account secure.</p>
-            <button class="btn-primary" onclick="changePassword()"><i class="fas fa-key"></i> Change Password</button>
-        </div></div>
-        <div class="card"><h2><i class="fas fa-info-circle"></i> System Information</h2>
-        <table class="data-table"><tr><td><strong>Application Name</strong></td><td>OBUNANGWE BULAIIRE</td></tr>
-        <tr><td><strong>Version</strong></td><td>2.0.0</tr>
-        <tr><td><strong>Total Activities</strong></td><td>${activities.length}</tr>
-        <tr><td><strong>Family Members</strong></td><td>${familyMembers.length}</tr>
-        <tr><td><strong>Last Login</strong></td><td>${new Date().toLocaleString()}</tr>
-        </table></div>
-        <div class="card"><h2><i class="fas fa-database"></i> Data Management</h2>
-        <div style="display:flex; gap:10px; flex-wrap:wrap">
-            <button class="btn-primary" onclick="exportData()"><i class="fas fa-download"></i> Export Data</button>
-            <button class="btn-danger" onclick="confirmClearData()"><i class="fas fa-trash"></i> Clear All Data</button>
-        </div></div>`;
-}
+        // Make global
+        window.selectRole = selectRole; window.confirmLogin = confirmLogin; window.logout = logout; window.switchPage = switchPage; window.toggleSidebar = toggleSidebar;
+        window.openAddModal = openAddModal; window.closeModal = closeModal; window.openEditActivity = openEditActivity; window.deleteActivity = deleteActivity;
+        window.deleteMember = deleteMember; window.sendWhatsApp = sendWhatsApp; window.makeCall = makeCall; window.sendSMS = sendSMS;
+        window.shareFullProgress = shareFullProgress; window.sendWhatsAppToAll = sendWhatsAppToAll; window.changePassword = changePassword;
 
-function renderCurrentPage() {
-    if (currentRole === 'admin') {
-        if (currentPage === 'dashboard') renderAdminDashboard();
-        else if (currentPage === 'activities') renderAdminActivities();
-        else if (currentPage === 'members') renderAdminMembers();
-        else if (currentPage === 'payments') renderAdminPayments();
-        else if (currentPage === 'contacts') renderContacts();
-        else if (currentPage === 'reports') renderAdminReports();
-        else if (currentPage === 'security') renderSecurity();
-        else if (currentPage === 'myactivities') renderAdminActivities();
-    } else {
-        if (currentPage === 'dashboard') renderUserDashboard();
-        else if (currentPage === 'myactivities') renderUserMyActivities();
-        else if (currentPage === 'payments') renderUserPayments();
-        else if (currentPage === 'contacts') renderContacts();
-        else if (currentPage === 'reports') renderUserReports();
-        else renderUserDashboard();
-    }
-}
-
-// Modal Functions
-function openAddModal() {
-    if (currentRole !== 'admin') { 
-        Swal.fire('Access Denied', 'Only administrators can add items', 'error'); 
-        return; 
-    }
-    if (currentPage === 'activities') document.getElementById('addActivityModal').style.display = 'flex';
-    else if (currentPage === 'members') document.getElementById('addMemberModal').style.display = 'flex';
-    else if (currentPage === 'payments') {
-        document.getElementById('paymentActivityId').innerHTML = activities.filter(a=>a.status==='active').map(a=>`<option value="${a.id}">${a.name}</option>`).join('');
-        document.getElementById('paymentMemberId').innerHTML = familyMembers.map(m=>`<option value="${m.id}">${m.name}</option>`).join('');
-        document.getElementById('paymentModal').style.display = 'flex';
-        document.getElementById('paymentDate').value = new Date().toISOString().split('T')[0];
-    }
-}
-
-function openEditActivity(id) {
-    const a = activities.find(a => a.id === id);
-    document.getElementById('editActivityId').value = a.id;
-    document.getElementById('editActivityName').value = a.name;
-    document.getElementById('editActivityDesc').value = a.description || '';
-    document.getElementById('editActivityBudget').value = a.totalBudget;
-    document.getElementById('editActivityDueDate').value = a.expectedCompletionDate;
-    document.getElementById('editActivityStatus').value = a.status;
-    document.getElementById('editActivityModal').style.display = 'flex';
-}
-
-function closeModal(id) { 
-    document.getElementById(id).style.display = 'none'; 
-}
-
-function changePassword() {
-    Swal.fire({
-        title: 'Change Password',
-        html: '<input id="newPwd" class="swal2-input" placeholder="New Password"><input id="confirmPwd" class="swal2-input" placeholder="Confirm Password">',
-        preConfirm: () => {
-            const pwd = document.getElementById('newPwd').value;
-            const confirm = document.getElementById('confirmPwd').value;
-            if (pwd !== confirm) { Swal.showValidationMessage('Passwords do not match'); return false; }
-            if (pwd.length < 4) { Swal.showValidationMessage('Password must be at least 4 characters'); return false; }
-            return pwd;
-        }
-    }).then(result => {
-        if (result.isConfirmed) {
-            localStorage.setItem('adminPassword', result.value);
-            Swal.fire('Success!', 'Password changed successfully', 'success');
-        }
-    });
-}
-
-function exportData() {
-    const data = { activities, familyMembers, exportDate: new Date().toISOString() };
-    const dataStr = JSON.stringify(data, null, 2);
-    const blob = new Blob([dataStr], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `obunangwe_backup_${new Date().toISOString().split('T')[0]}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-    Swal.fire('Exported!', 'Data exported successfully', 'success');
-}
-
-function confirmClearData() {
-    Swal.fire({
-        title: 'Clear All Data?',
-        text: "This will delete ALL activities and payments! Cannot be undone!",
-        icon: 'warning',
-        showCancelButton: true,
-        confirmButtonColor: '#d33',
-        confirmButtonText: 'Yes, clear everything!'
-    }).then((result) => {
-        if (result.isConfirmed) {
-            activities = [];
-            const amountPerPerson = 100000 / familyMembers.length;
-            const sampleActivity = {
-                id: Date.now(),
-                name: "Sample Activity",
-                description: "Please create new activities",
-                totalBudget: 100000,
-                expectedCompletionDate: new Date().toISOString().split('T')[0],
-                status: "active",
-                memberPayments: familyMembers.map(m => ({
-                    memberId: m.id, memberName: m.name,
-                    amountOwed: amountPerPerson, amountPaid: 0, payments: [], status: 'unpaid'
-                }))
-            };
-            activities.push(sampleActivity);
-            saveActivities();
-            renderCurrentPage();
-            Swal.fire('Cleared!', 'All data has been cleared.', 'success');
-        }
-    });
-}
-
-// Navigation
-function switchPage(page) {
-    currentPage = page;
-    
-    document.querySelectorAll('.nav-item').forEach(item => item.classList.remove('active'));
-    if(event && event.target) {
-        const clickedItem = event.target.closest('.nav-item');
-        if(clickedItem) clickedItem.classList.add('active');
-    }
-    
-    const titles = {
-        dashboard: 'Dashboard', myactivities: 'My Activities', activities: 'Activities',
-        members: 'Members', payments: 'Payments', contacts: 'Contacts',
-        reports: 'Reports', security: 'Security'
-    };
-    document.getElementById('pageTitle').innerHTML = `<i class="fas ${getPageIcon(page)}"></i> ${titles[page] || page}`;
-    
-    const fab = document.getElementById('fabButton');
-    if(currentRole === 'admin' && (page === 'activities' || page === 'members' || page === 'payments')) {
-        fab.style.display = 'flex';
-    } else {
-        fab.style.display = 'none';
-    }
-    
-    renderCurrentPage();
-}
-
-function getPageIcon(page) {
-    const icons = {
-        dashboard: 'fa-tachometer-alt', myactivities: 'fa-list', activities: 'fa-tasks',
-        members: 'fa-users', payments: 'fa-money-bill-wave', contacts: 'fa-address-book',
-        reports: 'fa-chart-bar', security: 'fa-shield-alt'
-    };
-    return icons[page] || 'fa-folder';
-}
-
-function toggleSidebar() {
-    document.getElementById('sidebar').classList.toggle('collapsed');
-    document.querySelector('.main-content').classList.toggle('expanded');
-}
-
-// Authentication
-function selectRole(role) {
-    selectedRole = role;
-    document.getElementById('adminRoleBtn').style.borderColor = role === 'admin' ? '#ff862d' : '#e0e0e0';
-    document.getElementById('userRoleBtn').style.borderColor = role === 'user' ? '#ff862d' : '#e0e0e0';
-    document.getElementById('adminPasswordDiv').style.display = role === 'admin' ? 'block' : 'none';
-    document.getElementById('userSelectDiv').style.display = role === 'user' ? 'block' : 'none';
-    
-    if (role === 'user') {
-        const select = document.getElementById('userSelect');
-        select.innerHTML = '<option value="">Select your name...</option>' + familyMembers.map(m => `<option value="${m.id}">${m.name}</option>`).join('');
-    }
-}
-
-function confirmLogin() {
-    if (selectedRole === 'admin') {
-        const pwd = document.getElementById('adminPassword').value;
-        const storedPwd = localStorage.getItem('adminPassword') || 'admin123';
-        if (pwd === storedPwd) {
-            currentRole = 'admin';
-            currentUser = { id: 0, name: 'Administrator' };
-            showAdminDashboard();
-        } else {
-            Swal.fire('Error', 'Invalid password! Default: admin123', 'error');
-        }
-    } else if (selectedRole === 'user') {
-        const userId = parseInt(document.getElementById('userSelect').value);
-        if (!userId) { Swal.fire('Error', 'Please select your name', 'error'); return; }
-        const user = familyMembers.find(m => m.id === userId);
-        if (user) {
-            currentRole = 'user';
-            currentUser = user;
-            showUserDashboard();
-        } else {
-            Swal.fire('Error', 'User not found', 'error');
-        }
-    } else {
-        Swal.fire('Error', 'Please select a role', 'error');
-    }
-}
-
-function showAdminDashboard() {
-    document.getElementById('loginScreen').style.display = 'none';
-    document.getElementById('appContainer').style.display = 'block';
-    document.getElementById('userNameDisplay').innerHTML = '👑 Administrator';
-    document.getElementById('roleBadge').innerHTML = 'Full Access';
-    document.getElementById('sidebarUserName').innerHTML = 'Administrator';
-    document.getElementById('viewOnlyBanner').style.display = 'none';
-    document.getElementById('fabButton').style.display = 'flex';
-    
-    document.getElementById('myActivitiesNav').style.display = 'none';
-    document.getElementById('activitiesNav').style.display = 'flex';
-    document.getElementById('membersNav').style.display = 'flex';
-    document.getElementById('paymentsNav').style.display = 'flex';
-    document.getElementById('reportsNav').style.display = 'flex';
-    document.getElementById('securityNav').style.display = 'flex';
-    
-    currentPage = 'dashboard';
-    renderCurrentPage();
-    
-    document.querySelectorAll('.nav-item').forEach(item => item.classList.remove('active'));
-    document.querySelector('.nav-item[onclick="switchPage(\'dashboard\')"]')?.classList.add('active');
-}
-
-function showUserDashboard() {
-    document.getElementById('loginScreen').style.display = 'none';
-    document.getElementById('appContainer').style.display = 'block';
-    document.getElementById('userNameDisplay').innerHTML = `👤 ${currentUser.name}`;
-    document.getElementById('roleBadge').innerHTML = 'View Only';
-    document.getElementById('sidebarUserName').innerHTML = currentUser.name;
-    document.getElementById('viewOnlyBanner').style.display = 'block';
-    document.getElementById('fabButton').style.display = 'none';
-    
-    document.getElementById('myActivitiesNav').style.display = 'flex';
-    document.getElementById('activitiesNav').style.display = 'none';
-    document.getElementById('membersNav').style.display = 'none';
-    document.getElementById('paymentsNav').style.display = 'flex';
-    document.getElementById('reportsNav').style.display = 'flex';
-    document.getElementById('securityNav').style.display = 'none';
-    
-    currentPage = 'dashboard';
-    renderCurrentPage();
-    
-    document.querySelectorAll('.nav-item').forEach(item => item.classList.remove('active'));
-    document.querySelector('.nav-item[onclick="switchPage(\'dashboard\')"]')?.classList.add('active');
-}
-
-function logout() {
-    currentRole = null;
-    currentUser = null;
-    document.getElementById('appContainer').style.display = 'none';
-    document.getElementById('loginScreen').style.display = 'block';
-    document.getElementById('adminPassword').value = '';
-    document.getElementById('userSelect').value = '';
-    if (charts.paymentChart) charts.paymentChart.destroy();
-    if (charts.memberChart) charts.memberChart.destroy();
-}
-
-// Form Event Listeners
-document.getElementById('addActivityForm')?.addEventListener('submit', (e) => {
-    e.preventDefault();
-    if (createActivity(activityName.value, activityDesc.value, parseFloat(activityBudget.value), activityDueDate.value)) {
-        closeModal('addActivityModal');
-        e.target.reset();
-        renderCurrentPage();
-    }
-});
-
-document.getElementById('addMemberForm')?.addEventListener('submit', (e) => {
-    e.preventDefault();
-    if (addMember(memberName.value, memberRole.value, memberPhone.value, memberEmail.value)) {
-        closeModal('addMemberModal');
-        e.target.reset();
-        renderCurrentPage();
-    }
-});
-
-document.getElementById('paymentForm')?.addEventListener('submit', (e) => {
-    e.preventDefault();
-    if (recordPayment(parseInt(paymentActivityId.value), parseInt(paymentMemberId.value), parseFloat(paymentAmount.value), paymentDate.value, paymentNotes.value)) {
-        closeModal('paymentModal');
-        e.target.reset();
-        renderCurrentPage();
-    }
-});
-
-document.getElementById('editActivityForm')?.addEventListener('submit', (e) => {
-    e.preventDefault();
-    if (updateActivity(parseInt(editActivityId.value), editActivityName.value, editActivityDesc.value, parseFloat(editActivityBudget.value), editActivityDueDate.value, editActivityStatus.value)) {
-        closeModal('editActivityModal');
-        renderCurrentPage();
-    }
-});
-
-// Initialize
-initData();
-setTimeout(() => {
-    document.getElementById('loadingScreen').style.display = 'none';
-}, 1000);
-</script>
+        // Start
+        (async () => {
+            await initDatabase();
+            document.getElementById('loadingScreen').style.display = 'none';
+            document.getElementById('loginScreen').style.display = 'block';
+        })();
+    </script>
 </body>
 </html>
