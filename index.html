@@ -3,17 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>OBUNANGWE BULAIIRE - Family Payment Tracker</title>
+    <title>OBUNANGWE BULAIIRE - IndexedDB Family Payment Tracker</title>
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/sql-wasm.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: #f5f5f5;
-            overflow-x: hidden;
-        }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f5f5f5; overflow-x: hidden; }
         :root {
             --primary-orange: #ff862d;
             --primary-teal: #01605a;
@@ -75,7 +70,7 @@
             gap: 15px;
         }
         .nav-item:hover { background: rgba(255,255,255,0.1); transform: translateX(5px); }
-        .nav-item.active { background: var(--primary-orange); }
+        .nav-item.active { background: var(--primary-orange); box-shadow: 0 5px 15px rgba(255,134,45,0.3); }
         .nav-item i { width: 24px; font-size: 20px; }
         .nav-label { font-size: 14px; font-weight: 500; }
         .user-info-sidebar {
@@ -159,7 +154,8 @@
         .data-table th { background: var(--primary-gradient); color: white; padding: 12px; text-align: left; }
         .data-table td { padding: 12px; border-bottom: 1px solid #f0f0f0; }
         .data-table tr:hover { background: var(--primary-peach); }
-        .btn-primary { background: var(--primary-gradient); color: white; border: none; padding: 8px 16px; border-radius: 8px; cursor: pointer; }
+        .btn-primary { background: var(--primary-gradient); color: white; border: none; padding: 8px 16px; border-radius: 8px; cursor: pointer; transition: all 0.3s; }
+        .btn-primary:hover { transform: translateY(-2px); }
         .btn-danger { background: var(--danger); color: white; border: none; padding: 5px 12px; border-radius: 5px; cursor: pointer; }
         .btn-edit { background: var(--info); color: white; border: none; padding: 5px 12px; border-radius: 5px; cursor: pointer; }
         .btn-whatsapp { background: #25D366; color: white; border: none; padding: 8px 16px; border-radius: 8px; cursor: pointer; }
@@ -298,23 +294,22 @@
     <div id="loadingScreen" class="loading-screen">
         <i class="fas fa-database fa-pulse" style="font-size: 64px; margin-bottom: 20px;"></i>
         <h2>OBUNANGWE BULAIIRE</h2>
-        <p>Initializing Database...</p>
-        <p style="font-size: 12px; margin-top: 10px;">Please wait</p>
+        <p>Initializing IndexedDB Database...</p>
     </div>
 
     <div id="loginScreen" class="login-container" style="display: none;">
         <i class="fas fa-hand-holding-heart" style="font-size: 48px; color: var(--primary-orange); margin-bottom: 20px;"></i>
         <h2 style="color: var(--primary-teal);">OBUNANGWE BULAIIRE</h2>
-        <p style="color: #666; margin-bottom: 30px;">Family Payment Tracker</p>
+        <p style="color: #666; margin-bottom: 30px;">IndexedDB Family Payment Tracker</p>
         
         <div class="role-btn" onclick="selectRole('admin')" id="adminRoleBtn">
             <div style="font-size: 20px; font-weight: bold;">👑 Administrator</div>
-            <div style="font-size: 12px; color: #666;">Full Control</div>
+            <div style="font-size: 12px; color: #666;">Full Control: Create, Edit, Delete, Share reports</div>
         </div>
         
         <div class="role-btn" onclick="selectRole('user')" id="userRoleBtn">
             <div style="font-size: 20px; font-weight: bold;">👤 Family Member</div>
-            <div style="font-size: 12px; color: #666;">View Only</div>
+            <div style="font-size: 12px; color: #666;">View Only: See MY payments and activity totals</div>
         </div>
 
         <div id="adminPasswordDiv" style="display: none; margin-top: 20px;">
@@ -331,7 +326,8 @@
         
         <div style="margin-top: 20px; font-size: 12px; color: #999;">
             <p>🔐 Admin Password: <strong>admin123</strong></p>
-            <p>👤 Family members: Select from dropdown</p>
+            <p>👤 Family members: Select from dropdown (No password)</p>
+            <p>💾 Database: IndexedDB (Modern, Fast, Persistent)</p>
         </div>
     </div>
 
@@ -369,7 +365,7 @@
                 </div>
             </div>
             <div id="viewOnlyBanner" class="view-only-banner" style="display: none;">
-                <i class="fas fa-eye"></i> View Only Mode - You can only see YOUR information
+                <i class="fas fa-eye"></i> View Only Mode - You can only see YOUR payments and activity totals
             </div>
             <div id="pageContent"></div>
         </div>
@@ -413,379 +409,864 @@
     <div id="shareContent"></div><div style="margin-top:20px"><button onclick="sendWhatsAppToAll()" class="btn-whatsapp" style="width:100%">Send to All Members</button></div></div></div>
 
     <script>
+        // IndexedDB Database Handler
         let db = null;
         let currentUser = null;
         let currentRole = null;
         let selectedRole = null;
         let currentPage = 'dashboard';
+        let shareMessage = '';
 
-        // Initialize SQLite
-        async function initDatabase() {
-            const SQL = await initSqlJs({
-                locateFile: file => `https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/${file}`
+        // Database name and version
+        const DB_NAME = 'ObunangweBulaireDB';
+        const DB_VERSION = 1;
+
+        // Initialize IndexedDB
+        function initIndexedDB() {
+            return new Promise((resolve, reject) => {
+                const request = indexedDB.open(DB_NAME, DB_VERSION);
+                
+                request.onerror = () => reject(request.error);
+                request.onsuccess = () => {
+                    db = request.result;
+                    resolve();
+                };
+                
+                request.onupgradeneeded = (event) => {
+                    const database = event.target.result;
+                    
+                    // Create stores (tables)
+                    if (!database.objectStoreNames.contains('family_members')) {
+                        const memberStore = database.createObjectStore('family_members', { keyPath: 'id', autoIncrement: true });
+                        memberStore.createIndex('name', 'name', { unique: false });
+                    }
+                    
+                    if (!database.objectStoreNames.contains('activities')) {
+                        const activityStore = database.createObjectStore('activities', { keyPath: 'id', autoIncrement: true });
+                        activityStore.createIndex('status', 'status', { unique: false });
+                    }
+                    
+                    if (!database.objectStoreNames.contains('member_activities')) {
+                        database.createObjectStore('member_activities', { keyPath: 'id', autoIncrement: true });
+                    }
+                    
+                    if (!database.objectStoreNames.contains('payments')) {
+                        database.createObjectStore('payments', { keyPath: 'id', autoIncrement: true });
+                    }
+                    
+                    if (!database.objectStoreNames.contains('admin_settings')) {
+                        database.createObjectStore('admin_settings', { keyPath: 'key' });
+                    }
+                };
             });
-            db = new SQL.Database();
-            
-            // Create tables
-            db.run(`CREATE TABLE IF NOT EXISTS family_members (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, role TEXT, phone TEXT, email TEXT)`);
-            db.run(`CREATE TABLE IF NOT EXISTS activities (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, description TEXT, total_budget REAL, expected_completion_date TEXT, status TEXT)`);
-            db.run(`CREATE TABLE IF NOT EXISTS member_activities (id INTEGER PRIMARY KEY AUTOINCREMENT, activity_id INTEGER, member_id INTEGER, amount_owed REAL, amount_paid REAL, status TEXT)`);
-            db.run(`CREATE TABLE IF NOT EXISTS payments (id INTEGER PRIMARY KEY AUTOINCREMENT, activity_id INTEGER, member_id INTEGER, amount REAL, payment_date TEXT, notes TEXT)`);
-            db.run(`CREATE TABLE IF NOT EXISTS admin_settings (id INTEGER PRIMARY KEY AUTOINCREMENT, setting_key TEXT, setting_value TEXT)`);
-            
-            // Check if data exists
-            const memberCount = db.exec("SELECT COUNT(*) FROM family_members");
-            if (!memberCount.length || memberCount[0].values[0][0] === 0) {
-                db.run(`INSERT INTO family_members (name, role, phone, email) VALUES 
-                    ('John Okello', 'parent', '+256700000001', 'john@family.com'),
-                    ('Sarah Okello', 'parent', '+256700000002', 'sarah@family.com'),
-                    ('Emma Okello', 'child', '+256700000003', 'emma@family.com'),
-                    ('Michael Okello', 'child', '+256700000004', 'michael@family.com')`);
+        }
+
+        // Helper functions for IndexedDB operations
+        async function getAllFromStore(storeName) {
+            return new Promise((resolve, reject) => {
+                const transaction = db.transaction(storeName, 'readonly');
+                const store = transaction.objectStore(storeName);
+                const request = store.getAll();
+                request.onsuccess = () => resolve(request.result || []);
+                request.onerror = () => reject(request.error);
+            });
+        }
+
+        async function getFromStore(storeName, key) {
+            return new Promise((resolve, reject) => {
+                const transaction = db.transaction(storeName, 'readonly');
+                const store = transaction.objectStore(storeName);
+                const request = store.get(key);
+                request.onsuccess = () => resolve(request.result);
+                request.onerror = () => reject(request.error);
+            });
+        }
+
+        async function addToStore(storeName, data) {
+            return new Promise((resolve, reject) => {
+                const transaction = db.transaction(storeName, 'readwrite');
+                const store = transaction.objectStore(storeName);
+                const request = store.add(data);
+                request.onsuccess = () => resolve(request.result);
+                request.onerror = () => reject(request.error);
+            });
+        }
+
+        async function putToStore(storeName, data) {
+            return new Promise((resolve, reject) => {
+                const transaction = db.transaction(storeName, 'readwrite');
+                const store = transaction.objectStore(storeName);
+                const request = store.put(data);
+                request.onsuccess = () => resolve(request.result);
+                request.onerror = () => reject(request.error);
+            });
+        }
+
+        async function deleteFromStore(storeName, key) {
+            return new Promise((resolve, reject) => {
+                const transaction = db.transaction(storeName, 'readwrite');
+                const store = transaction.objectStore(storeName);
+                const request = store.delete(key);
+                request.onsuccess = () => resolve();
+                request.onerror = () => reject(request.error);
+            });
+        }
+
+        async function clearStore(storeName) {
+            return new Promise((resolve, reject) => {
+                const transaction = db.transaction(storeName, 'readwrite');
+                const store = transaction.objectStore(storeName);
+                const request = store.clear();
+                request.onsuccess = () => resolve();
+                request.onerror = () => reject(request.error);
+            });
+        }
+
+        // Data initialization
+        async function initData() {
+            const members = await getAllFromStore('family_members');
+            if (members.length === 0) {
+                // Insert sample family members
+                await addToStore('family_members', { name: "John Okello", role: "parent", phone: "+256700000001", email: "john@family.com" });
+                await addToStore('family_members', { name: "Sarah Okello", role: "parent", phone: "+256700000002", email: "sarah@family.com" });
+                await addToStore('family_members', { name: "Emma Okello", role: "child", phone: "+256700000003", email: "emma@family.com" });
+                await addToStore('family_members', { name: "Michael Okello", role: "child", phone: "+256700000004", email: "michael@family.com" });
                 
-                db.run(`INSERT INTO activities (name, description, total_budget, expected_completion_date, status) VALUES 
-                    ('Family Trip to Lake Mburo', '3-day vacation', 2500000, '2024-12-15', 'active')`);
+                // Insert sample activity
+                const newMembers = await getAllFromStore('family_members');
+                const amountPerPerson = 2500000 / newMembers.length;
+                const activityId = Date.now();
+                await addToStore('activities', {
+                    id: activityId,
+                    name: "Family Trip to Lake Mburo",
+                    description: "3-day vacation including transport, accommodation, and meals",
+                    totalBudget: 2500000,
+                    expectedCompletionDate: "2024-12-15",
+                    status: "active"
+                });
                 
-                const activityId = db.exec("SELECT last_insert_rowid()")[0].values[0][0];
-                const members = db.exec("SELECT id FROM family_members");
-                const amountOwed = 2500000 / 4;
-                members[0].values.forEach(m => {
-                    db.run(`INSERT INTO member_activities (activity_id, member_id, amount_owed, amount_paid, status) VALUES (${activityId}, ${m[0]}, ${amountOwed}, 0, 'unpaid')`);
+                for (const member of newMembers) {
+                    await addToStore('member_activities', {
+                        activityId: activityId,
+                        memberId: member.id,
+                        amountOwed: amountPerPerson,
+                        amountPaid: 0,
+                        status: 'unpaid'
+                    });
+                }
+            }
+            
+            // Check admin password
+            const adminSetting = await getFromStore('admin_settings', 'admin_password');
+            if (!adminSetting) {
+                await addToStore('admin_settings', { key: 'admin_password', value: 'admin123' });
+            }
+        }
+
+        // Data retrieval functions
+        async function getFamilyMembers() {
+            return await getAllFromStore('family_members');
+        }
+
+        async function getActivities() {
+            const activities = await getAllFromStore('activities');
+            return activities.sort((a, b) => b.id - a.id);
+        }
+
+        async function getMemberActivities(memberId) {
+            const all = await getAllFromStore('member_activities');
+            const filtered = all.filter(ma => ma.memberId === memberId);
+            const result = [];
+            for (const ma of filtered) {
+                const activity = (await getAllFromStore('activities')).find(a => a.id === ma.activityId);
+                if (activity) {
+                    result.push({
+                        ...ma,
+                        activityName: activity.name,
+                        description: activity.description,
+                        expectedDate: activity.expectedCompletionDate,
+                        totalBudget: activity.totalBudget
+                    });
+                }
+            }
+            return result;
+        }
+
+        async function getMemberPayments(memberId) {
+            const all = await getAllFromStore('payments');
+            const filtered = all.filter(p => p.memberId === memberId);
+            const result = [];
+            for (const p of filtered) {
+                const activity = (await getAllFromStore('activities')).find(a => a.id === p.activityId);
+                result.push({
+                    ...p,
+                    activityName: activity ? activity.name : 'Unknown'
+                });
+            }
+            return result.sort((a, b) => new Date(b.paymentDate) - new Date(a.paymentDate));
+        }
+
+        async function getAllPayments() {
+            const payments = await getAllFromStore('payments');
+            const members = await getFamilyMembers();
+            const activities = await getActivities();
+            const result = [];
+            for (const p of payments) {
+                const member = members.find(m => m.id === p.memberId);
+                const activity = activities.find(a => a.id === p.activityId);
+                result.push({
+                    ...p,
+                    memberName: member ? member.name : 'Unknown',
+                    activityName: activity ? activity.name : 'Unknown'
+                });
+            }
+            return result.sort((a, b) => new Date(b.paymentDate) - new Date(a.paymentDate));
+        }
+
+        async function getStatistics() {
+            const activities = await getActivities();
+            const activeActivities = activities.filter(a => a.status === 'active').length;
+            const completedActivities = activities.filter(a => a.status === 'completed').length;
+            const payments = await getAllPayments();
+            const totalCollected = payments.reduce((sum, p) => sum + p.amount, 0);
+            const memberActivities = await getAllFromStore('member_activities');
+            const totalOwed = memberActivities.reduce((sum, ma) => sum + ma.amountOwed, 0);
+            return { activeActivities, completedActivities, totalCollected, totalOwed };
+        }
+
+        async function getUserStatistics(userId) {
+            const memberActivities = await getMemberActivities(userId);
+            const totalOwed = memberActivities.reduce((sum, ma) => sum + ma.amountOwed, 0);
+            const totalPaid = memberActivities.reduce((sum, ma) => sum + ma.amountPaid, 0);
+            return { totalOwed, totalPaid, balance: totalOwed - totalPaid };
+        }
+
+        // CRUD Operations (Admin only)
+        async function createActivity(name, desc, budget, dueDate) {
+            if (currentRole !== 'admin') { Swal.fire('Access Denied', 'Only administrators can create activities', 'error'); return false; }
+            
+            const members = await getFamilyMembers();
+            const amountPerPerson = budget / members.length;
+            const activityId = Date.now();
+            
+            await addToStore('activities', {
+                id: activityId,
+                name: name,
+                description: desc,
+                totalBudget: parseFloat(budget),
+                expectedCompletionDate: dueDate,
+                status: "active"
+            });
+            
+            for (const member of members) {
+                await addToStore('member_activities', {
+                    activityId: activityId,
+                    memberId: member.id,
+                    amountOwed: amountPerPerson,
+                    amountPaid: 0,
+                    status: 'unpaid'
                 });
             }
             
-            const adminCheck = db.exec("SELECT * FROM admin_settings WHERE setting_key = 'admin_password'");
-            if (!adminCheck.length) {
-                db.run(`INSERT INTO admin_settings (setting_key, setting_value) VALUES ('admin_password', 'admin123')`);
+            Swal.fire('Success!', 'Activity created successfully', 'success');
+            return true;
+        }
+
+        async function updateActivity(id, name, desc, budget, dueDate, status) {
+            if (currentRole !== 'admin') { Swal.fire('Access Denied', 'Only administrators can edit activities', 'error'); return false; }
+            
+            const activity = { id: parseInt(id), name, description: desc, totalBudget: parseFloat(budget), expectedCompletionDate: dueDate, status };
+            await putToStore('activities', activity);
+            
+            const members = await getFamilyMembers();
+            const newAmount = budget / members.length;
+            const memberActivities = await getAllFromStore('member_activities');
+            for (const ma of memberActivities) {
+                if (ma.activityId === parseInt(id)) {
+                    ma.amountOwed = newAmount;
+                    await putToStore('member_activities', ma);
+                }
+            }
+            
+            Swal.fire('Updated!', 'Activity updated successfully', 'success');
+            return true;
+        }
+
+        async function deleteActivity(id) {
+            if (currentRole !== 'admin') { Swal.fire('Access Denied', 'Only administrators can delete activities', 'error'); return; }
+            
+            const result = await Swal.fire({ title: 'Delete Activity?', text: "This cannot be undone!", icon: 'warning', showCancelButton: true, confirmButtonColor: '#d33', confirmButtonText: 'Delete' });
+            if (result.isConfirmed) {
+                const payments = await getAllFromStore('payments');
+                for (const p of payments) {
+                    if (p.activityId === id) await deleteFromStore('payments', p.id);
+                }
+                const memberActivities = await getAllFromStore('member_activities');
+                for (const ma of memberActivities) {
+                    if (ma.activityId === id) await deleteFromStore('member_activities', ma.id);
+                }
+                await deleteFromStore('activities', id);
+                await renderCurrentPage();
+                Swal.fire('Deleted!', 'Activity has been deleted.', 'success');
             }
         }
 
-        function getFamilyMembers() {
-            const result = db.exec("SELECT id, name, role, phone, email FROM family_members");
-            return result.length ? result[0].values.map(r => ({ id: r[0], name: r[1], role: r[2], phone: r[3], email: r[4] })) : [];
-        }
-
-        function getActivities() {
-            const result = db.exec("SELECT id, name, description, total_budget, expected_completion_date, status FROM activities ORDER BY id DESC");
-            return result.length ? result[0].values.map(r => ({ id: r[0], name: r[1], description: r[2], totalBudget: r[3], expectedCompletionDate: r[4], status: r[5] })) : [];
-        }
-
-        function getMemberActivities(memberId) {
-            const result = db.exec(`SELECT ma.*, a.name FROM member_activities ma JOIN activities a ON ma.activity_id = a.id WHERE ma.member_id = ${memberId}`);
-            return result.length ? result[0].values.map(r => ({ id: r[0], activityId: r[1], memberId: r[2], amountOwed: r[3], amountPaid: r[4], status: r[5], activityName: r[6] })) : [];
-        }
-
-        function getMemberPayments(memberId) {
-            const result = db.exec(`SELECT p.*, a.name FROM payments p JOIN activities a ON p.activity_id = a.id WHERE p.member_id = ${memberId} ORDER BY p.payment_date DESC`);
-            return result.length ? result[0].values.map(r => ({ id: r[0], activityId: r[1], memberId: r[2], amount: r[3], paymentDate: r[4], notes: r[5], activityName: r[6] })) : [];
-        }
-
-        function getAllPayments() {
-            const result = db.exec(`SELECT p.*, a.name as aname, m.name as mname FROM payments p JOIN activities a ON p.activity_id = a.id JOIN family_members m ON p.member_id = m.id ORDER BY p.payment_date DESC`);
-            return result.length ? result[0].values.map(r => ({ id: r[0], amount: r[3], paymentDate: r[4], notes: r[5], activityName: r[6], memberName: r[7] })) : [];
-        }
-
-        function getStats() {
-            const active = db.exec("SELECT COUNT(*) FROM activities WHERE status='active'")[0]?.values[0][0] || 0;
-            const completed = db.exec("SELECT COUNT(*) FROM activities WHERE status='completed'")[0]?.values[0][0] || 0;
-            const collected = db.exec("SELECT SUM(amount) FROM payments")[0]?.values[0][0] || 0;
-            const owed = db.exec("SELECT SUM(amount_owed) FROM member_activities")[0]?.values[0][0] || 0;
-            return { active, completed, collected, owed };
-        }
-
-        function getUserStats(userId) {
-            const owed = db.exec(`SELECT SUM(amount_owed) FROM member_activities WHERE member_id = ${userId}`)[0]?.values[0][0] || 0;
-            const paid = db.exec(`SELECT SUM(amount_paid) FROM member_activities WHERE member_id = ${userId}`)[0]?.values[0][0] || 0;
-            return { owed, paid, balance: owed - paid };
-        }
-
-        // CRUD
-        function createActivity(name, desc, budget, due) {
-            if (currentRole !== 'admin') { Swal.fire('Access Denied', 'Only admins can create', 'error'); return false; }
-            const members = getFamilyMembers();
-            const amountOwed = budget / members.length;
-            db.run(`INSERT INTO activities (name, description, total_budget, expected_completion_date, status) VALUES (?,?,?,?,'active')`, [name, desc, budget, due]);
-            const activityId = db.exec("SELECT last_insert_rowid()")[0].values[0][0];
-            members.forEach(m => { db.run(`INSERT INTO member_activities (activity_id, member_id, amount_owed, amount_paid, status) VALUES (?,?,?,0,'unpaid')`, [activityId, m.id, amountOwed]); });
-            Swal.fire('Success', 'Activity created', 'success');
-            return true;
-        }
-
-        function updateActivity(id, name, desc, budget, due, status) {
-            if (currentRole !== 'admin') { Swal.fire('Access Denied', 'Only admins can edit', 'error'); return false; }
-            db.run(`UPDATE activities SET name=?, description=?, total_budget=?, expected_completion_date=?, status=? WHERE id=?`, [name, desc, budget, due, status, id]);
-            const members = getFamilyMembers();
-            const newAmount = budget / members.length;
-            db.run(`UPDATE member_activities SET amount_owed=? WHERE activity_id=?`, [newAmount, id]);
-            Swal.fire('Updated', 'Activity updated', 'success');
-            return true;
-        }
-
-        function deleteActivity(id) {
-            if (currentRole !== 'admin') { Swal.fire('Access Denied', 'Only admins can delete', 'error'); return; }
-            Swal.fire({ title: 'Delete?', text: 'Cannot undo!', icon: 'warning', showCancelButton: true, confirmButtonColor: '#d33', confirmButtonText: 'Delete' }).then(r => {
-                if (r.isConfirmed) { db.run(`DELETE FROM payments WHERE activity_id=${id}`); db.run(`DELETE FROM member_activities WHERE activity_id=${id}`); db.run(`DELETE FROM activities WHERE id=${id}`); renderCurrentPage(); Swal.fire('Deleted', '', 'success'); }
-            });
-        }
-
-        function addMember(name, role, phone, email) {
-            if (currentRole !== 'admin') { Swal.fire('Access Denied', 'Only admins can add', 'error'); return false; }
-            db.run(`INSERT INTO family_members (name, role, phone, email) VALUES (?,?,?,?)`, [name, role, phone, email]);
-            const memberId = db.exec("SELECT last_insert_rowid()")[0].values[0][0];
-            const activities = getActivities();
-            activities.forEach(a => {
-                if (a.status === 'active') {
-                    const members = getFamilyMembers();
-                    const newAmount = a.totalBudget / members.length;
-                    db.run(`UPDATE member_activities SET amount_owed=? WHERE activity_id=?`, [newAmount, a.id]);
-                    db.run(`INSERT INTO member_activities (activity_id, member_id, amount_owed, amount_paid, status) VALUES (?,?,?,0,'unpaid')`, [a.id, memberId, newAmount]);
+        async function addMember(name, role, phone, email) {
+            if (currentRole !== 'admin') { Swal.fire('Access Denied', 'Only administrators can add members', 'error'); return false; }
+            
+            const newMember = { name: name, role: role, phone: phone, email: email };
+            const memberId = await addToStore('family_members', newMember);
+            
+            const activities = await getActivities();
+            for (const activity of activities) {
+                if (activity.status === 'active') {
+                    const members = await getFamilyMembers();
+                    const newAmount = activity.totalBudget / members.length;
+                    const memberActivities = await getAllFromStore('member_activities');
+                    for (const ma of memberActivities) {
+                        if (ma.activityId === activity.id) {
+                            ma.amountOwed = newAmount;
+                            await putToStore('member_activities', ma);
+                        }
+                    }
+                    await addToStore('member_activities', {
+                        activityId: activity.id,
+                        memberId: memberId,
+                        amountOwed: newAmount,
+                        amountPaid: 0,
+                        status: 'unpaid'
+                    });
                 }
-            });
-            Swal.fire('Success', `${name} added`, 'success');
+            }
+            
+            Swal.fire('Success!', `${name} added to family`, 'success');
             return true;
         }
 
-        function deleteMember(id) {
-            if (currentRole !== 'admin') { Swal.fire('Access Denied', 'Only admins can delete', 'error'); return; }
-            const hasPayments = db.exec(`SELECT COUNT(*) FROM payments WHERE member_id=${id}`)[0]?.values[0][0] || 0;
-            if (hasPayments > 0) { Swal.fire('Error', 'Member has payments', 'error'); return; }
-            Swal.fire({ title: 'Remove?', text: 'Remove this member?', icon: 'warning', showCancelButton: true, confirmButtonColor: '#d33', confirmButtonText: 'Remove' }).then(r => {
-                if (r.isConfirmed) { db.run(`DELETE FROM member_activities WHERE member_id=${id}`); db.run(`DELETE FROM family_members WHERE id=${id}`); renderCurrentPage(); Swal.fire('Removed', '', 'success'); }
-            });
+        async function deleteMember(id) {
+            if (currentRole !== 'admin') { Swal.fire('Access Denied', 'Only administrators can delete members', 'error'); return; }
+            
+            const payments = await getAllFromStore('payments');
+            const hasPayments = payments.some(p => p.memberId === id);
+            if (hasPayments) { Swal.fire('Error!', 'Cannot delete member with payment records', 'error'); return; }
+            
+            const result = await Swal.fire({ title: 'Remove Member?', text: "Remove this family member?", icon: 'warning', showCancelButton: true, confirmButtonColor: '#d33', confirmButtonText: 'Remove' });
+            if (result.isConfirmed) {
+                const memberActivities = await getAllFromStore('member_activities');
+                for (const ma of memberActivities) {
+                    if (ma.memberId === id) await deleteFromStore('member_activities', ma.id);
+                }
+                await deleteFromStore('family_members', id);
+                await renderCurrentPage();
+                Swal.fire('Removed!', 'Member has been removed.', 'success');
+            }
         }
 
-        function recordPayment(activityId, memberId, amount, date, notes) {
-            if (currentRole !== 'admin') { Swal.fire('Access Denied', 'Only admins can record', 'error'); return false; }
-            db.run(`INSERT INTO payments (activity_id, member_id, amount, payment_date, notes) VALUES (?,?,?,?,?)`, [activityId, memberId, amount, date, notes]);
-            const currentPaid = db.exec(`SELECT amount_paid FROM member_activities WHERE activity_id=${activityId} AND member_id=${memberId}`)[0]?.values[0][0] || 0;
-            const newPaid = currentPaid + amount;
-            const amountOwed = db.exec(`SELECT amount_owed FROM member_activities WHERE activity_id=${activityId} AND member_id=${memberId}`)[0]?.values[0][0] || 0;
-            const status = newPaid >= amountOwed ? 'paid' : (newPaid > 0 ? 'partial' : 'unpaid');
-            db.run(`UPDATE member_activities SET amount_paid=?, status=? WHERE activity_id=? AND member_id=?`, [newPaid, status, activityId, memberId]);
-            const allPaid = db.exec(`SELECT COUNT(*) as t, SUM(CASE WHEN status='paid' THEN 1 ELSE 0 END) as p FROM member_activities WHERE activity_id=${activityId}`)[0];
-            if (allPaid && allPaid.values[0][0] === allPaid.values[0][1]) { db.run(`UPDATE activities SET status='completed' WHERE id=${activityId}`); }
-            Swal.fire('Success', 'Payment recorded', 'success');
+        async function recordPayment(activityId, memberId, amount, date, notes) {
+            if (currentRole !== 'admin') { Swal.fire('Access Denied', 'Only administrators can record payments', 'error'); return false; }
+            
+            await addToStore('payments', {
+                activityId: activityId,
+                memberId: memberId,
+                amount: parseFloat(amount),
+                paymentDate: date,
+                notes: notes
+            });
+            
+            const memberActivities = await getAllFromStore('member_activities');
+            for (const ma of memberActivities) {
+                if (ma.activityId === activityId && ma.memberId === memberId) {
+                    ma.amountPaid += parseFloat(amount);
+                    ma.status = ma.amountPaid >= ma.amountOwed ? 'paid' : (ma.amountPaid > 0 ? 'partial' : 'unpaid');
+                    await putToStore('member_activities', ma);
+                    break;
+                }
+            }
+            
+            // Check if all members have paid for this activity
+            const allMemberActivities = await getAllFromStore('member_activities');
+            const activityMemberActivities = allMemberActivities.filter(ma => ma.activityId === activityId);
+            const allPaid = activityMemberActivities.every(ma => ma.status === 'paid');
+            if (allPaid) {
+                const activity = (await getActivities()).find(a => a.id === activityId);
+                if (activity && activity.status === 'active') {
+                    activity.status = 'completed';
+                    await putToStore('activities', activity);
+                }
+            }
+            
+            Swal.fire('Success!', 'Payment recorded successfully', 'success');
             return true;
         }
 
-        // Communication
-        function sendSMS(phone, msg) { if(phone) window.location.href = `sms:${phone}?body=${encodeURIComponent(msg)}`; }
-        function sendWhatsApp(phone, msg) { if(phone) { let p = phone.replace(/\D/g,''); if(!p.startsWith('256')) p='256'+p; window.open(`https://wa.me/${p}?text=${encodeURIComponent(msg)}`,'_blank'); } }
-        function makeCall(phone) { if(phone) window.location.href = `tel:${phone}`; }
+        // Communication Functions
+        function sendSMS(phone, message) { if (phone) window.location.href = `sms:${phone}?body=${encodeURIComponent(message)}`; }
+        function sendWhatsApp(phone, message) { if (phone) { let cleanPhone = phone.replace(/\D/g, ''); if (!cleanPhone.startsWith('256')) cleanPhone = '256' + cleanPhone; window.open(`https://wa.me/${cleanPhone}?text=${encodeURIComponent(message)}`, '_blank'); } }
+        function makeCall(phone) { if (phone) window.location.href = `tel:${phone}`; }
 
-        function shareFullProgress() {
-            const members = getFamilyMembers();
-            const acts = getActivities();
-            const stats = getStats();
-            let msg = `📊 *OBUNANGWE BULAIIRE REPORT* 📊\n📅 ${new Date().toLocaleString()}\n👥 Members: ${members.length}\n💰 Collected: UGX ${stats.collected.toLocaleString()}\n\n`;
-            acts.forEach(a => { const collected = db.exec(`SELECT SUM(amount_paid) FROM member_activities WHERE activity_id=${a.id}`)[0]?.values[0][0] || 0; msg += `📌 ${a.name}: UGX ${collected.toLocaleString()}/${a.totalBudget.toLocaleString()}\n`; });
-            msg += `\n👤 MEMBERS:\n`;
-            members.forEach(m => { const s = getUserStats(m.id); msg += `${m.name}: Owed UGX ${s.owed.toLocaleString()} | Paid UGX ${s.paid.toLocaleString()}\n`; });
-            document.getElementById('shareContent').innerHTML = `<pre style="background:#f5f5f5;padding:15px;border-radius:10px;white-space:pre-wrap">${msg}</pre>`;
+        async function shareFullProgress() {
+            if (currentRole !== 'admin') { Swal.fire('Access Denied', 'Only administrators can share payment progress', 'error'); return; }
+            
+            const members = await getFamilyMembers();
+            const activitiesList = await getActivities();
+            const stats = await getStatistics();
+            let message = `📊 *OBUNANGWE BULAIIRE - PAYMENT PROGRESS REPORT* 📊\n\n📅 *Date:* ${new Date().toLocaleString()}\n👥 *Members:* ${members.length}\n🎯 *Activities:* ${activitiesList.length}\n💰 *Total Collected:* UGX ${stats.totalCollected.toLocaleString()}\n📈 *Pending:* UGX ${(stats.totalOwed - stats.totalCollected).toLocaleString()}\n\n━═━═━═━═━\n\n*📋 ACTIVITIES:*\n`;
+            
+            for (const a of activitiesList) {
+                const memberActivities = await getAllFromStore('member_activities');
+                const collected = memberActivities.filter(ma => ma.activityId === a.id).reduce((sum, ma) => sum + ma.amountPaid, 0);
+                const progress = (collected / a.totalBudget * 100).toFixed(1);
+                message += `🏷️ *${a.name}*: UGX ${collected.toLocaleString()} / ${a.totalBudget.toLocaleString()} (${progress}%)\n`;
+            }
+            
+            message += `\n*👥 MEMBERS:*\n`;
+            for (const m of members) {
+                const userStats = await getUserStatistics(m.id);
+                message += `👤 *${m.name}*: Owed UGX ${userStats.totalOwed.toLocaleString()} | Paid UGX ${userStats.totalPaid.toLocaleString()} | Balance UGX ${userStats.balance.toLocaleString()}\n`;
+            }
+            
+            message += `\n📱 *OBUNANGWE BULAIIRE*\nThank you for your cooperation! 🙏`;
+            
+            shareMessage = message;
+            document.getElementById('shareContent').innerHTML = `<pre style="white-space:pre-wrap; background:#f5f5f5; padding:15px; border-radius:10px; max-height:400px; overflow-y:auto;">${message}</pre>`;
             document.getElementById('shareModal').style.display = 'flex';
         }
 
-        function sendWhatsAppToAll() { getFamilyMembers().forEach(m => { if(m.phone) sendWhatsApp(m.phone, shareMessage || 'Check OBUNANGWE BULAIIRE for payment updates'); }); Swal.fire('Shared', 'Messages sent', 'success'); closeModal('shareModal'); }
+        async function sendWhatsAppToAll() {
+            const members = await getFamilyMembers();
+            for (const member of members) {
+                if (member.phone) {
+                    setTimeout(() => sendWhatsApp(member.phone, shareMessage), 500);
+                }
+            }
+            Swal.fire('Shared!', 'Progress sent to all family members', 'success');
+            closeModal('shareModal');
+        }
 
-        let shareMessage = '';
-
-        // Render Functions
-        function renderAdminDashboard() {
-            const stats = getStats();
-            const acts = getActivities();
+        // Render Functions (similar to previous version but async)
+        async function renderAdminDashboard() {
+            const stats = await getStatistics();
+            const activitiesList = await getActivities();
             document.getElementById('pageContent').innerHTML = `
                 <div class="stats-grid">
-                    <div class="stat-card" onclick="switchPage('activities')"><div class="stat-number">${stats.active}</div><h3>Active Activities</h3></div>
-                    <div class="stat-card" onclick="switchPage('activities')"><div class="stat-number">${stats.completed}</div><h3>Completed</h3></div>
-                    <div class="stat-card" onclick="switchPage('payments')"><div class="stat-number">UGX ${stats.collected.toLocaleString()}</div><h3>Total Collected</h3></div>
-                    <div class="stat-card" onclick="switchPage('reports')"><div class="stat-number">UGX ${(stats.owed - stats.collected).toLocaleString()}</div><h3>Pending</h3></div>
+                    <div class="stat-card" onclick="switchPage('activities')"><div class="stat-number">${stats.activeActivities}</div><h3>Active Activities</h3></div>
+                    <div class="stat-card" onclick="switchPage('activities')"><div class="stat-number">${stats.completedActivities}</div><h3>Completed</h3></div>
+                    <div class="stat-card" onclick="switchPage('payments')"><div class="stat-number">UGX ${stats.totalCollected.toLocaleString()}</div><h3>Total Collected</h3></div>
+                    <div class="stat-card" onclick="switchPage('reports')"><div class="stat-number">UGX ${(stats.totalOwed - stats.totalCollected).toLocaleString()}</div><h3>Pending</h3></div>
                 </div>
                 <div class="card"><h2>Recent Activities <button class="btn-whatsapp" onclick="shareFullProgress()"><i class="fab fa-whatsapp"></i> Share Progress</button></h2>
-                <table class="data-table"><thead><tr><th>Activity</th><th>Budget</th><th>Due Date</th><th>Status</th></tr></thead><tbody>
-                ${acts.slice(0,5).map(a => `<tr><td><strong>${a.name}</strong></td><td>UGX ${a.totalBudget.toLocaleString()}</td><td>${new Date(a.expectedCompletionDate).toLocaleDateString()}</td><td><span class="badge badge-${a.status}">${a.status}</span></td></tr>`).join('') || '<tr><td colspan="4">No activities</td></tr>'}
-                </tbody></tr></div>`;
+                <table class="data-table"><thead><tr><th>Activity</th><th>Budget</th><th>Due Date</th><th>Progress</th><th>Status</th></tr></thead><tbody>
+                ${await Promise.all(activitiesList.slice(0,5).map(async a => {
+                    const memberActivities = await getAllFromStore('member_activities');
+                    const collected = memberActivities.filter(ma => ma.activityId === a.id).reduce((sum, ma) => sum + ma.amountPaid, 0);
+                    const progress = (collected / a.totalBudget * 100).toFixed(0);
+                    return `<tr>
+                        <td><strong>${a.name}</strong></td>
+                        <td>UGX ${a.totalBudget.toLocaleString()}</td>
+                        <td>${new Date(a.expectedCompletionDate).toLocaleDateString()}</td>
+                        <td><div class="progress-bar-container" style="width:80px"><div class="progress-bar" style="width:${progress}%">${progress}%</div></div></td>
+                        <td><span class="badge badge-${a.status}">${a.status}</span></td>
+                    </tr>`;
+                })).then(rows => rows.join('')) || '<tr><td colspan="5">No activities<\/td><\/tr>'}
+                </tbody></td></div>`;
         }
 
-        function renderUserDashboard() {
-            const stats = getUserStats(currentUser.id);
-            const myActs = getMemberActivities(currentUser.id);
+        async function renderUserDashboard() {
+            const userStats = await getUserStatistics(currentUser.id);
+            const userActivities = await getMemberActivities(currentUser.id);
             document.getElementById('pageContent').innerHTML = `
                 <div class="stats-grid">
-                    <div class="stat-card"><div class="stat-number">UGX ${stats.owed.toLocaleString()}</div><h3>My Total Owed</h3></div>
-                    <div class="stat-card"><div class="stat-number">UGX ${stats.paid.toLocaleString()}</div><h3>My Total Paid</h3></div>
-                    <div class="stat-card"><div class="stat-number">UGX ${stats.balance.toLocaleString()}</div><h3>My Balance</h3></div>
-                    <div class="stat-card"><div class="stat-number">${myActs.length}</div><h3>My Activities</h3></div>
+                    <div class="stat-card"><div class="stat-number">UGX ${userStats.totalOwed.toLocaleString()}</div><h3>My Total Owed</h3></div>
+                    <div class="stat-card"><div class="stat-number">UGX ${userStats.totalPaid.toLocaleString()}</div><h3>My Total Paid</h3></div>
+                    <div class="stat-card"><div class="stat-number">UGX ${userStats.balance.toLocaleString()}</div><h3>My Balance</h3></div>
+                    <div class="stat-card"><div class="stat-number">${userActivities.length}</div><h3>My Activities</h3></div>
                 </div>
-                <div class="card"><h2>My Activities</h2>
-                <table class="data-table"><thead><tr><th>Activity</th><th>My Share</th><th>I've Paid</th><th>Balance</th><th>Status</th></tr></thead><tbody>
-                ${myActs.map(a => `<tr><td>${a.activityName}</td><td>UGX ${a.amountOwed.toLocaleString()}</td><td>UGX ${a.amountPaid.toLocaleString()}</td><td>UGX ${(a.amountOwed - a.amountPaid).toLocaleString()}</td><td class="${(a.amountOwed - a.amountPaid) === 0 ? 'paid-status' : 'unpaid-status'}">${(a.amountOwed - a.amountPaid) === 0 ? '✅ Paid' : '❌ Pending'}</td></tr>`).join('') || '<td><td colspan="5">No activities</td></table>'}
+                <div class="card"><h2>My Recent Activities</h2>
+                <table class="data-table"><thead><tr><th>Activity</th><th>My Share</th><th>I've Paid</th><th>My Balance</th><th>Due Date</th><th>Status</th></tr></thead><tbody>
+                ${userActivities.slice(0,5).map(a => {
+                    const balance = a.amountOwed - a.amountPaid;
+                    return `<tr>
+                        <td><strong>${a.activityName}</strong></td>
+                        <td>UGX ${a.amountOwed.toLocaleString()}</td>
+                        <td>UGX ${a.amountPaid.toLocaleString()}</td>
+                        <td>UGX ${balance.toLocaleString()}</td>
+                        <td>${new Date(a.expectedDate).toLocaleDateString()}</td>
+                        <td class="${balance === 0 ? 'paid-status' : 'unpaid-status'}">${balance === 0 ? '✅ Paid' : '❌ Pending'}<\/td>
+                    </tr>`;
+                }).join('') || '<td><td colspan="6">No activities assigned<\/td><\/tr>'}
                 </tbody></table></div>`;
         }
 
-        function renderAdminActivities() {
-            const acts = getActivities();
+        async function renderAdminActivities() {
+            const activitiesList = await getActivities();
+            let cardsHtml = '';
+            for (const a of activitiesList) {
+                const memberActivities = await getAllFromStore('member_activities');
+                const collected = memberActivities.filter(ma => ma.activityId === a.id).reduce((sum, ma) => sum + ma.amountPaid, 0);
+                const progress = (collected / a.totalBudget * 100).toFixed(0);
+                cardsHtml += `<div class="activity-card">
+                    <h3>${a.name}</h3>
+                    <p>${a.description || 'No description'}</p>
+                    <p>💰 Budget: UGX ${a.totalBudget.toLocaleString()}</p>
+                    <p>📅 Due: ${new Date(a.expectedCompletionDate).toLocaleDateString()}</p>
+                    <div class="progress-bar-container"><div class="progress-bar" style="width:${progress}%">${progress}%</div></div>
+                    <span class="badge badge-${a.status}">${a.status}</span>
+                    <div style="margin-top:10px">
+                        <button class="btn-edit" onclick="openEditActivity(${a.id})"><i class="fas fa-edit"></i> Edit</button>
+                        <button class="btn-danger" onclick="deleteActivity(${a.id})"><i class="fas fa-trash"></i> Delete</button>
+                    </div>
+                </div>`;
+            }
             document.getElementById('pageContent').innerHTML = `<div class="card"><h2>All Activities <button class="btn-primary" onclick="openAddModal()"><i class="fas fa-plus"></i> New Activity</button></h2>
-            <div class="activity-grid">${acts.map(a => { const collected = db.exec(`SELECT SUM(amount_paid) FROM member_activities WHERE activity_id=${a.id}`)[0]?.values[0][0] || 0; const progress = (collected / a.totalBudget * 100).toFixed(0);
-            return `<div class="activity-card"><h3>${a.name}</h3><p>${a.description || ''}</p><p>💰 UGX ${a.totalBudget.toLocaleString()}</p><p>📅 ${new Date(a.expectedCompletionDate).toLocaleDateString()}</p><div class="progress-bar-container"><div class="progress-bar" style="width:${progress}%">${progress}%</div></div><span class="badge badge-${a.status}">${a.status}</span><div style="margin-top:10px"><button class="btn-edit" onclick="openEditActivity(${a.id})">Edit</button> <button class="btn-danger" onclick="deleteActivity(${a.id})">Delete</button></div></div>`; }).join('') || '<p>No activities</p>'}</div></div>`;
+            <div class="activity-grid">${cardsHtml || '<p>No activities created yet</p>'}</div></div>`;
         }
 
-        function renderUserMyActivities() {
-            const myActs = getMemberActivities(currentUser.id);
-            document.getElementById('pageContent').innerHTML = `<div class="card"><h2>My Activities</h2>
-            <div class="activity-grid">${myActs.map(a => { const paidPercent = (a.amountPaid / a.amountOwed * 100).toFixed(0);
-            return `<div class="activity-card"><h3>${a.activityName}</h3><p>💰 My Share: UGX ${a.amountOwed.toLocaleString()}</p><p>✅ Paid: UGX ${a.amountPaid.toLocaleString()}</p><p>⏳ Remaining: UGX ${(a.amountOwed - a.amountPaid).toLocaleString()}</p><div class="progress-bar-container"><div class="progress-bar" style="width:${paidPercent}%">${paidPercent}% paid</div></div>${(a.amountOwed - a.amountPaid) === 0 ? '<span class="paid-status">✅ Fully paid!</span>' : '<span class="unpaid-status">❌ Pending</span>'}</div>`; }).join('') || '<p>No activities</p>'}</div></div>`;
+        async function renderUserMyActivities() {
+            const userActivities = await getMemberActivities(currentUser.id);
+            let cardsHtml = '';
+            for (const a of userActivities) {
+                const balance = a.amountOwed - a.amountPaid;
+                const paidPercent = (a.amountPaid / a.amountOwed * 100).toFixed(0);
+                cardsHtml += `<div class="activity-card">
+                    <h3>${a.activityName}</h3>
+                    <p>${a.description || 'No description'}</p>
+                    <p>💰 Total Activity Budget: UGX ${a.totalBudget.toLocaleString()}</p>
+                    <p>👤 My Share: UGX ${a.amountOwed.toLocaleString()}</p>
+                    <p>✅ I've Paid: UGX ${a.amountPaid.toLocaleString()}</p>
+                    <p>⏳ My Remaining: UGX ${balance.toLocaleString()}</p>
+                    <div class="progress-bar-container"><div class="progress-bar" style="width:${paidPercent}%">${paidPercent}% of my share paid</div></div>
+                    <p style="margin-top:10px; font-size:12px; color:#666;">📅 Due: ${new Date(a.expectedDate).toLocaleDateString()}</p>
+                    ${balance === 0 ? '<span class="paid-status"><i class="fas fa-check-circle"></i> I have fully paid my share!</span>' : '<span class="unpaid-status"><i class="fas fa-clock"></i> Payment pending</span>'}
+                </div>`;
+            }
+            document.getElementById('pageContent').innerHTML = `<div class="card"><h2><i class="fas fa-list"></i> My Activities</h2>
+            <div class="activity-grid">${cardsHtml || '<p>No active activities assigned to you</p>'}</div></div>`;
         }
 
-        function renderAdminMembers() {
-            const members = getFamilyMembers();
+        async function renderAdminMembers() {
+            const members = await getFamilyMembers();
+            let rows = '';
+            for (const m of members) {
+                const stats = await getUserStatistics(m.id);
+                rows += `<tr>
+                    <td><span style="font-size:24px">${m.role === 'parent' ? '👨‍👩' : '🧒'}</span></td>
+                    <td><strong>${m.name}</strong></td>
+                    <td>${m.role === 'parent' ? 'Parent' : 'Child'}</td>
+                    <td>${m.phone || '-'}</td>
+                    <td>${m.email || '-'}</td>
+                    <td>UGX ${stats.totalOwed.toLocaleString()}</td>
+                    <td>UGX ${stats.totalPaid.toLocaleString()}</td>
+                    <td class="${stats.balance === 0 ? 'paid-status' : 'unpaid-status'}">UGX ${stats.balance.toLocaleString()}</td>
+                    <td><button class="btn-danger" onclick="deleteMember(${m.id})"><i class="fas fa-trash"></i> Remove</button></td>
+                </tr>`;
+            }
             document.getElementById('pageContent').innerHTML = `<div class="card"><h2>Family Members <button class="btn-primary" onclick="openAddModal()"><i class="fas fa-plus"></i> Add Member</button></h2>
-            <table class="data-table"><thead><td><th>Name</th><th>Role</th><th>Phone</th><th>Email</th><th>Actions</th></tr></thead><tbody>
-            ${members.map(m => `<tr><td><strong>${m.name}</strong></td><td>${m.role === 'parent' ? 'Parent' : 'Child'}</td><td>${m.phone || '-'}</td><td>${m.email || '-'}</td><td><button class="btn-danger" onclick="deleteMember(${m.id})">Remove</button></td></tr>`).join('')}
-            </tbody><table></div>`;
+            <table class="data-table"><thead><td><th>Avatar</th><th>Name</th><th>Role</th><th>Phone</th><th>Email</th><th>Total Owed</th><th>Total Paid</th><th>Balance</th><th>Actions</th></tr></thead><tbody>${rows}</tbody></table></div>`;
         }
 
-        function renderAdminPayments() {
-            const payments = getAllPayments();
-            document.getElementById('pageContent').innerHTML = `<div class="card"><h2>All Payments <button class="btn-primary" onclick="openAddModal()"><i class="fas fa-plus"></i> Record Payment</button></h2>
-            <table class="data-table"><thead><td><th>Date</th><th>Member</th><th>Activity</th><th>Amount</th><th>Notes</th></tr></thead><tbody>
-            ${payments.map(p => `<tr><td>${new Date(p.paymentDate).toLocaleDateString()}</td><td>${p.memberName}</td><td>${p.activityName}</td><td>UGX ${p.amount.toLocaleString()}</td><td>${p.notes || '-'}</td></td>`).join('') || '<tr><td colspan="5">No payments</td></tr>'}
-            </tbody></table></div>`;
+        async function renderAdminPayments() {
+            const payments = await getAllPayments();
+            let rows = '';
+            for (const p of payments) {
+                rows += `<tr>
+                    <td>${new Date(p.paymentDate).toLocaleDateString()}</td>
+                    <td>${p.memberName}</td>
+                    <td>${p.activityName}</td>
+                    <td>UGX ${p.amount.toLocaleString()}</td>
+                    <td>${p.notes || '-'}</td>
+                </tr>`;
+            }
+            document.getElementById('pageContent').innerHTML = `<div class="card"><h2>All Payment Transactions <button class="btn-primary" onclick="openAddModal()"><i class="fas fa-plus"></i> Record Payment</button></h2>
+            <table class="data-table"><thead><tr><th>Date</th><th>Member</th><th>Activity</th><th>Amount (UGX)</th><th>Notes</th></tr></thead><tbody>${rows || '<tr><td colspan="5">No payments recorded yet<\/td><\/tr>'}</tbody></table></div>`;
         }
 
-        function renderUserPayments() {
-            const payments = getMemberPayments(currentUser.id);
-            document.getElementById('pageContent').innerHTML = `<div class="card"><h2>My Payment History</h2>
-            <table class="data-table"><thead><tr><th>Date</th><th>Activity</th><th>Amount</th><th>Notes</th></tr></thead><tbody>
-            ${payments.map(p => `<tr><td>${new Date(p.paymentDate).toLocaleDateString()}</td><td>${p.activityName}</td><td>UGX ${p.amount.toLocaleString()}</td><td>${p.notes || '-'}</td></tr>`).join('') || '<tr><td colspan="4">No payments</td></tr>'}
-            </tbody></table></div>`;
+        async function renderUserPayments() {
+            const payments = await getMemberPayments(currentUser.id);
+            let rows = '';
+            for (const p of payments) {
+                rows += `<tr>
+                    <td>${new Date(p.paymentDate).toLocaleDateString()}</td>
+                    <td>${p.activityName}</td>
+                    <td>UGX ${p.amount.toLocaleString()}</td>
+                    <td>${p.notes || '-'}</td>
+                </tr>`;
+            }
+            document.getElementById('pageContent').innerHTML = `<div class="card"><h2><i class="fas fa-history"></i> My Payment History</h2>
+            <table class="data-table"><thead></tr><th>Date</th><th>Activity</th><th>Amount Paid (UGX)</th><th>Notes</th></tr></thead><tbody>${rows || '<tr><td colspan="4">No payment history yet<\/td><\/tr>'}</tbody></table></div>`;
         }
 
-        function renderContacts() {
-            const members = getFamilyMembers();
-            document.getElementById('pageContent').innerHTML = `<div class="card"><h2>Family Contacts</h2>
-            ${members.map(m => `<div class="contact-card"><div><strong>${m.name}</strong><br>${m.role}<br>📞 ${m.phone || 'No phone'}</div><div>${m.phone ? `<button class="whatsapp-btn" onclick="sendWhatsApp('${m.phone}','Hello from OBUNANGWE BULAIIRE')">WhatsApp</button><button class="call-btn" onclick="makeCall('${m.phone}')">Call</button><button class="sms-btn" onclick="sendSMS('${m.phone}','Check your payment status')">SMS</button>` : 'No contact'}</div></div>`).join('')}</div>`;
+        async function renderContacts() {
+            const members = await getFamilyMembers();
+            let contactsHtml = '';
+            for (const m of members) {
+                contactsHtml += `<div class="contact-card">
+                    <div>
+                        <span style="font-size:32px">${m.role === 'parent' ? '👨‍👩' : '🧒'}</span><br>
+                        <strong>${m.name}</strong><br>
+                        ${m.role === 'parent' ? 'Parent' : 'Child'}<br>
+                        📞 ${m.phone || 'No phone'}
+                    </div>
+                    <div>
+                        ${m.phone ? `
+                            <button class="whatsapp-btn" onclick="sendWhatsApp('${m.phone}', 'Hello ${m.name} from OBUNANGWE BULAIIRE! Check your payment status.')"><i class="fab fa-whatsapp"></i> WhatsApp</button>
+                            <button class="call-btn" onclick="makeCall('${m.phone}')"><i class="fas fa-phone"></i> Call</button>
+                            <button class="sms-btn" onclick="sendSMS('${m.phone}', 'Hello ${m.name}, please check the family payment tracker for updates.')"><i class="fas fa-envelope"></i> SMS</button>
+                        ` : '<span>No contact info</span>'}
+                    </div>
+                </div>`;
+            }
+            document.getElementById('pageContent').innerHTML = `<div class="card"><h2><i class="fas fa-address-book"></i> Family Contacts Directory</h2>${contactsHtml}</div>`;
         }
 
-        function renderAdminReports() {
-            const stats = getStats();
-            const members = getFamilyMembers();
-            document.getElementById('pageContent').innerHTML = `
-                <div class="stats-grid"><div class="stat-card"><div class="stat-number">${members.length}</div><h3>Members</h3></div>
-                <div class="stat-card"><div class="stat-number">${getActivities().length}</div><h3>Activities</h3></div>
-                <div class="stat-card"><div class="stat-number">${stats.owed > 0 ? ((stats.collected / stats.owed * 100)).toFixed(1) : 0}%</div><h3>Progress</h3></div></div>
-                <div class="card"><h2>Member Summary <button class="btn-whatsapp" onclick="shareFullProgress()"><i class="fab fa-whatsapp"></i> Share Report</button></h2>
-                <table class="data-table"><thead><tr><th>Member</th><th>Owed</th><th>Paid</th><th>Balance</th><th>Status</th><th>Action</th></tr></thead><tbody>
-                ${members.map(m => { const s = getUserStats(m.id); return `<td><td><strong>${m.name}</strong></td><td>UGX ${s.owed.toLocaleString()}</td><td>UGX ${s.paid.toLocaleString()}</td><td class="${s.balance === 0 ? 'paid-status' : 'unpaid-status'}">UGX ${s.balance.toLocaleString()}</td><td>${s.balance === 0 ? '✅ Settled' : '❌ Pending'}</td><td>${m.phone && s.balance > 0 ? `<button class="sms-btn" onclick="sendSMS('${m.phone}','Reminder: Pending UGX ${s.balance.toLocaleString()}')">Remind</button>` : '-'}</td></td>`; }).join('')}
-                </tbody></table></div>`;
-        }
-
-        function renderUserReports() {
-            const stats = getUserStats(currentUser.id);
-            const myActs = getMemberActivities(currentUser.id);
+        async function renderAdminReports() {
+            const stats = await getStatistics();
+            const members = await getFamilyMembers();
+            let rows = '';
+            for (const m of members) {
+                const s = await getUserStatistics(m.id);
+                rows += `<tr>
+                    <td><strong>${m.name}</strong></td>
+                    <td>UGX ${s.totalOwed.toLocaleString()}</td>
+                    <td>UGX ${s.totalPaid.toLocaleString()}</td>
+                    <td class="${s.balance === 0 ? 'paid-status' : 'unpaid-status'}">UGX ${s.balance.toLocaleString()}</td>
+                    <td>${s.balance === 0 ? '✅ Settled' : '❌ Pending'}</td>
+                    <td>${m.phone && s.balance > 0 ? `<button class="sms-btn" onclick="sendSMS('${m.phone}', 'Reminder: You have a pending balance of UGX ${s.balance.toLocaleString()} for family activities.')"><i class="fas fa-envelope"></i> Remind</button>` : '-'}</td>
+                </tr>`;
+            }
             document.getElementById('pageContent').innerHTML = `
                 <div class="stats-grid">
-                    <div class="stat-card"><div class="stat-number">UGX ${stats.owed.toLocaleString()}</div><h3>My Owed</h3></div>
-                    <div class="stat-card"><div class="stat-number">UGX ${stats.paid.toLocaleString()}</div><h3>My Paid</h3></div>
-                    <div class="stat-card"><div class="stat-number">UGX ${stats.balance.toLocaleString()}</div><h3>My Balance</h3></div>
+                    <div class="stat-card"><div class="stat-number">${members.length}</div><h3>Family Members</h3></div>
+                    <div class="stat-card"><div class="stat-number">${(await getActivities()).length}</div><h3>Total Activities</h3></div>
+                    <div class="stat-card"><div class="stat-number">${stats.totalOwed > 0 ? ((stats.totalCollected / stats.totalOwed * 100)).toFixed(1) : 0}%</div><h3>Overall Progress</h3></div>
                 </div>
-                <div class="card"><h2>My Activity Status</h2>
-                <div class="activity-grid">${myActs.map(a => { const paidPercent = (a.amountPaid / a.amountOwed * 100).toFixed(0);
-                return `<div class="activity-card"><h3>${a.activityName}</h3><p>💰 My Share: UGX ${a.amountOwed.toLocaleString()}</p><p>✅ Paid: UGX ${a.amountPaid.toLocaleString()}</p><div class="progress-bar-container"><div class="progress-bar" style="width:${paidPercent}%">${paidPercent}%</div></div>${(a.amountOwed - a.amountPaid) === 0 ? '<span class="paid-status">✅ Paid</span>' : '<span class="unpaid-status">❌ Pending</span>'}</div>`; }).join('') || '<p>No activities</p>'}</div></div>`;
+                <div class="card"><h2><i class="fas fa-table"></i> Member Financial Summary <button class="btn-whatsapp" onclick="shareFullProgress()"><i class="fab fa-whatsapp"></i> Share Report</button></h2>
+                <table class="data-table"><thead><tr><th>Member</th><th>Total Owed (UGX)</th><th>Total Paid (UGX)</th><th>Balance (UGX)</th><th>Status</th><th>Action</th></tr></thead><tbody>${rows}</tbody></table></div>`;
         }
 
-        function renderSecurity() {
-            document.getElementById('pageContent').innerHTML = `<div class="card"><h2>Security</h2><div style="text-align:center;padding:30px"><i class="fas fa-lock" style="font-size:48px;color:var(--primary-orange)"></i><p style="margin:20px">Change Admin Password</p><button class="btn-primary" onclick="changePassword()">Change Password</button></div></div>
-            <div class="card"><h2>System Info</h2><table class="data-table"><tr><td>Database</td><td>SQLite</td></tr><tr><td>Activities</td><td>${getActivities().length}</td></tr><tr><td>Members</td><td>${getFamilyMembers().length}</td></tr></table></div>`;
+        async function renderUserReports() {
+            const userStats = await getUserStatistics(currentUser.id);
+            const userActivities = await getMemberActivities(currentUser.id);
+            let cardsHtml = '';
+            for (const a of userActivities) {
+                const balance = a.amountOwed - a.amountPaid;
+                const paidPercent = (a.amountPaid / a.amountOwed * 100).toFixed(0);
+                cardsHtml += `<div class="activity-card">
+                    <h3>${a.activityName}</h3>
+                    <p>💰 Total Activity Budget: UGX ${a.totalBudget.toLocaleString()}</p>
+                    <p>👤 My Share: UGX ${a.amountOwed.toLocaleString()}</p>
+                    <p>✅ I've Paid: UGX ${a.amountPaid.toLocaleString()}</p>
+                    <p>⏳ My Balance: UGX ${balance.toLocaleString()}</p>
+                    <div class="progress-bar-container"><div class="progress-bar" style="width:${paidPercent}%">${paidPercent}% of my share paid</div></div>
+                    <p style="margin-top:10px; font-size:12px;">📅 Due: ${new Date(a.expectedDate).toLocaleDateString()}</p>
+                    ${balance === 0 ? '<span class="paid-status"><i class="fas fa-check-circle"></i> Fully paid! 🎉</span>' : '<span class="unpaid-status"><i class="fas fa-clock"></i> Payment pending</span>'}
+                </div>`;
+            }
+            document.getElementById('pageContent').innerHTML = `
+                <div class="stats-grid">
+                    <div class="stat-card"><div class="stat-number">UGX ${userStats.totalOwed.toLocaleString()}</div><h3>My Total Owed</h3></div>
+                    <div class="stat-card"><div class="stat-number">UGX ${userStats.totalPaid.toLocaleString()}</div><h3>My Total Paid</h3></div>
+                    <div class="stat-card"><div class="stat-number">UGX ${userStats.balance.toLocaleString()}</div><h3>My Balance</h3></div>
+                </div>
+                <div class="card"><h2><i class="fas fa-chart-line"></i> My Activity Payment Status</h2>
+                <div class="activity-grid">${cardsHtml || '<p>No activities assigned to you</p>'}</div></div>`;
         }
 
-        function renderCurrentPage() {
+        async function renderSecurity() {
+            document.getElementById('pageContent').innerHTML = `
+                <div class="card"><h2><i class="fas fa-shield-alt"></i> Security Settings</h2>
+                <div style="text-align:center;padding:30px">
+                    <i class="fas fa-lock" style="font-size:48px;color:var(--primary-orange)"></i>
+                    <p style="margin:20px">Change your administrator password to keep your account secure.</p>
+                    <button class="btn-primary" onclick="changePassword()"><i class="fas fa-key"></i> Change Password</button>
+                </div></div>
+                <div class="card"><h2><i class="fas fa-info-circle"></i> System Information</h2>
+                <table class="data-table"><tr><td><strong>Application Name</strong></td><td>OBUNANGWE BULAIIRE</td></tr>
+                <tr><td><strong>Version</strong></td><td>2.0.0 (IndexedDB)</td></tr>
+                <tr><td><strong>Total Activities</strong></td><td>${(await getActivities()).length}</td></tr>
+                <tr><td><strong>Family Members</strong></td><td>${(await getFamilyMembers()).length}</td></tr>
+                <tr><td><strong>Last Login</strong></td><td>${new Date().toLocaleString()}</td></tr>
+                </table></div>
+                <div class="card"><h2><i class="fas fa-database"></i> Data Management</h2>
+                <div style="display:flex; gap:10px; flex-wrap:wrap">
+                    <button class="btn-primary" onclick="exportData()"><i class="fas fa-download"></i> Export Data</button>
+                    <button class="btn-danger" onclick="confirmClearData()"><i class="fas fa-trash"></i> Clear All Data</button>
+                </div></div>`;
+        }
+
+        async function renderCurrentPage() {
             if (currentRole === 'admin') {
-                if (currentPage === 'dashboard') renderAdminDashboard();
-                else if (currentPage === 'activities') renderAdminActivities();
-                else if (currentPage === 'members') renderAdminMembers();
-                else if (currentPage === 'payments') renderAdminPayments();
-                else if (currentPage === 'contacts') renderContacts();
-                else if (currentPage === 'reports') renderAdminReports();
-                else if (currentPage === 'security') renderSecurity();
-                else renderAdminDashboard();
+                if (currentPage === 'dashboard') await renderAdminDashboard();
+                else if (currentPage === 'activities') await renderAdminActivities();
+                else if (currentPage === 'members') await renderAdminMembers();
+                else if (currentPage === 'payments') await renderAdminPayments();
+                else if (currentPage === 'contacts') await renderContacts();
+                else if (currentPage === 'reports') await renderAdminReports();
+                else if (currentPage === 'security') await renderSecurity();
+                else await renderAdminDashboard();
             } else {
-                if (currentPage === 'dashboard') renderUserDashboard();
-                else if (currentPage === 'myactivities') renderUserMyActivities();
-                else if (currentPage === 'payments') renderUserPayments();
-                else if (currentPage === 'contacts') renderContacts();
-                else if (currentPage === 'reports') renderUserReports();
-                else renderUserDashboard();
+                if (currentPage === 'dashboard') await renderUserDashboard();
+                else if (currentPage === 'myactivities') await renderUserMyActivities();
+                else if (currentPage === 'payments') await renderUserPayments();
+                else if (currentPage === 'contacts') await renderContacts();
+                else if (currentPage === 'reports') await renderUserReports();
+                else await renderUserDashboard();
             }
         }
 
+        // Modal Functions
         function openAddModal() {
-            if (currentRole !== 'admin') { Swal.fire('Access Denied', 'Only admins can add', 'error'); return; }
+            if (currentRole !== 'admin') { Swal.fire('Access Denied', 'Only administrators can add items', 'error'); return; }
             if (currentPage === 'activities') document.getElementById('addActivityModal').style.display = 'flex';
             else if (currentPage === 'members') document.getElementById('addMemberModal').style.display = 'flex';
             else if (currentPage === 'payments') {
-                const acts = getActivities().filter(a => a.status === 'active');
-                const members = getFamilyMembers();
-                document.getElementById('paymentActivityId').innerHTML = acts.map(a => `<option value="${a.id}">${a.name}</option>`).join('');
-                document.getElementById('paymentMemberId').innerHTML = members.map(m => `<option value="${m.id}">${m.name}</option>`).join('');
-                document.getElementById('paymentModal').style.display = 'flex';
-                document.getElementById('paymentDate').value = new Date().toISOString().split('T')[0];
+                (async () => {
+                    const acts = (await getActivities()).filter(a => a.status === 'active');
+                    const members = await getFamilyMembers();
+                    document.getElementById('paymentActivityId').innerHTML = acts.map(a => `<option value="${a.id}">${a.name}</option>`).join('');
+                    document.getElementById('paymentMemberId').innerHTML = members.map(m => `<option value="${m.id}">${m.name}</option>`).join('');
+                    document.getElementById('paymentModal').style.display = 'flex';
+                    document.getElementById('paymentDate').value = new Date().toISOString().split('T')[0];
+                })();
             }
         }
 
         function openEditActivity(id) {
-            const a = getActivities().find(a => a.id === id);
-            document.getElementById('editActivityId').value = a.id;
-            document.getElementById('editActivityName').value = a.name;
-            document.getElementById('editActivityDesc').value = a.description || '';
-            document.getElementById('editActivityBudget').value = a.totalBudget;
-            document.getElementById('editActivityDueDate').value = a.expectedCompletionDate;
-            document.getElementById('editActivityStatus').value = a.status;
-            document.getElementById('editActivityModal').style.display = 'flex';
+            (async () => {
+                const a = (await getActivities()).find(a => a.id === id);
+                document.getElementById('editActivityId').value = a.id;
+                document.getElementById('editActivityName').value = a.name;
+                document.getElementById('editActivityDesc').value = a.description || '';
+                document.getElementById('editActivityBudget').value = a.totalBudget;
+                document.getElementById('editActivityDueDate').value = a.expectedCompletionDate;
+                document.getElementById('editActivityStatus').value = a.status;
+                document.getElementById('editActivityModal').style.display = 'flex';
+            })();
         }
 
         function closeModal(id) { document.getElementById(id).style.display = 'none'; }
 
-        function changePassword() {
-            Swal.fire({ title: 'Change Password', html: '<input id="np" class="swal2-input" placeholder="New Password"><input id="cp" class="swal2-input" placeholder="Confirm">', preConfirm: () => { const np = document.getElementById('np').value; const cp = document.getElementById('cp').value; if (np !== cp) { Swal.showValidationMessage('Passwords do not match'); return false; } if (np.length < 4) { Swal.showValidationMessage('Min 4 characters'); return false; } return np; } }).then(r => { if (r.isConfirmed) { db.run(`UPDATE admin_settings SET setting_value = ? WHERE setting_key = 'admin_password'`, [r.value]); Swal.fire('Success', 'Password changed', 'success'); } });
+        async function changePassword() {
+            Swal.fire({
+                title: 'Change Password',
+                html: '<input id="newPwd" class="swal2-input" placeholder="New Password"><input id="confirmPwd" class="swal2-input" placeholder="Confirm Password">',
+                preConfirm: () => {
+                    const pwd = document.getElementById('newPwd').value;
+                    const confirm = document.getElementById('confirmPwd').value;
+                    if (pwd !== confirm) { Swal.showValidationMessage('Passwords do not match'); return false; }
+                    if (pwd.length < 4) { Swal.showValidationMessage('Password must be at least 4 characters'); return false; }
+                    return pwd;
+                }
+            }).then(async (result) => {
+                if (result.isConfirmed) {
+                    await putToStore('admin_settings', { key: 'admin_password', value: result.value });
+                    Swal.fire('Success!', 'Password changed successfully', 'success');
+                }
+            });
         }
 
+        async function exportData() {
+            const activities = await getAllFromStore('activities');
+            const members = await getAllFromStore('family_members');
+            const memberActivities = await getAllFromStore('member_activities');
+            const payments = await getAllFromStore('payments');
+            const data = { activities, members, memberActivities, payments, exportDate: new Date().toISOString() };
+            const dataStr = JSON.stringify(data, null, 2);
+            const blob = new Blob([dataStr], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `obunangwe_backup_${new Date().toISOString().split('T')[0]}.json`;
+            a.click();
+            URL.revokeObjectURL(url);
+            Swal.fire('Exported!', 'Data exported successfully', 'success');
+        }
+
+        async function confirmClearData() {
+            Swal.fire({
+                title: 'Clear All Data?',
+                text: "This will delete ALL activities and payments! Cannot be undone!",
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonColor: '#d33',
+                confirmButtonText: 'Yes, clear everything!'
+            }).then(async (result) => {
+                if (result.isConfirmed) {
+                    await clearStore('activities');
+                    await clearStore('member_activities');
+                    await clearStore('payments');
+                    await initData();
+                    await renderCurrentPage();
+                    Swal.fire('Cleared!', 'All data has been cleared.', 'success');
+                }
+            });
+        }
+
+        // Navigation
         function switchPage(page) {
             currentPage = page;
-            document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
+            document.querySelectorAll('.nav-item').forEach(item => item.classList.remove('active'));
             if (event && event.target) event.target.closest('.nav-item')?.classList.add('active');
             const titles = { dashboard: 'Dashboard', myactivities: 'My Activities', activities: 'Activities', members: 'Members', payments: 'Payments', contacts: 'Contacts', reports: 'Reports', security: 'Security' };
-            document.getElementById('pageTitle').innerHTML = `<i class="fas ${getIcon(page)}"></i> ${titles[page]}`;
+            document.getElementById('pageTitle').innerHTML = `<i class="fas ${getPageIcon(page)}"></i> ${titles[page]}`;
             const fab = document.getElementById('fabButton');
             if (currentRole === 'admin' && (page === 'activities' || page === 'members' || page === 'payments')) fab.style.display = 'flex';
             else fab.style.display = 'none';
             renderCurrentPage();
         }
 
-        function getIcon(p) { const icons = { dashboard: 'fa-tachometer-alt', myactivities: 'fa-list', activities: 'fa-tasks', members: 'fa-users', payments: 'fa-money-bill-wave', contacts: 'fa-address-book', reports: 'fa-chart-bar', security: 'fa-shield-alt' }; return icons[p] || 'fa-folder'; }
+        function getPageIcon(page) {
+            const icons = { dashboard: 'fa-tachometer-alt', myactivities: 'fa-list', activities: 'fa-tasks', members: 'fa-users', payments: 'fa-money-bill-wave', contacts: 'fa-address-book', reports: 'fa-chart-bar', security: 'fa-shield-alt' };
+            return icons[page] || 'fa-folder';
+        }
 
-        function toggleSidebar() { document.getElementById('sidebar').classList.toggle('collapsed'); document.querySelector('.main-content').classList.toggle('expanded'); }
+        function toggleSidebar() {
+            document.getElementById('sidebar').classList.toggle('collapsed');
+            document.querySelector('.main-content').classList.toggle('expanded');
+        }
 
+        // Authentication
         function selectRole(role) {
             selectedRole = role;
             document.getElementById('adminRoleBtn').style.borderColor = role === 'admin' ? '#ff862d' : '#e0e0e0';
             document.getElementById('userRoleBtn').style.borderColor = role === 'user' ? '#ff862d' : '#e0e0e0';
             document.getElementById('adminPasswordDiv').style.display = role === 'admin' ? 'block' : 'none';
             document.getElementById('userSelectDiv').style.display = role === 'user' ? 'block' : 'none';
-            if (role === 'user') { const members = getFamilyMembers(); document.getElementById('userSelect').innerHTML = '<option value="">Select...</option>' + members.map(m => `<option value="${m.id}">${m.name}</option>`).join(''); }
+            if (role === 'user') {
+                (async () => {
+                    const members = await getFamilyMembers();
+                    document.getElementById('userSelect').innerHTML = '<option value="">Select your name...</option>' + members.map(m => `<option value="${m.id}">${m.name}</option>`).join('');
+                })();
+            }
         }
 
-        function confirmLogin() {
-            const storedPwd = db.exec("SELECT setting_value FROM admin_settings WHERE setting_key='admin_password'")[0]?.values[0][0] || 'admin123';
+        async function confirmLogin() {
+            const adminSetting = await getFromStore('admin_settings', 'admin_password');
+            const storedPwd = adminSetting ? adminSetting.value : 'admin123';
+            
             if (selectedRole === 'admin') {
                 const pwd = document.getElementById('adminPassword').value;
-                if (pwd === storedPwd) { currentRole = 'admin'; currentUser = { id: 0, name: 'Admin' }; showAdminDashboard(); }
-                else { Swal.fire('Error', 'Invalid password', 'error'); }
+                if (pwd === storedPwd) {
+                    currentRole = 'admin';
+                    currentUser = { id: 0, name: 'Administrator' };
+                    showAdminDashboard();
+                } else {
+                    Swal.fire('Error', 'Invalid password! Default: admin123', 'error');
+                }
             } else if (selectedRole === 'user') {
-                const uid = parseInt(document.getElementById('userSelect').value);
-                if (!uid) { Swal.fire('Error', 'Select your name', 'error'); return; }
-                const user = getFamilyMembers().find(m => m.id === uid);
-                if (user) { currentRole = 'user'; currentUser = user; showUserDashboard(); }
-                else { Swal.fire('Error', 'User not found', 'error'); }
-            } else { Swal.fire('Error', 'Select a role', 'error'); }
+                const userId = parseInt(document.getElementById('userSelect').value);
+                if (!userId) { Swal.fire('Error', 'Please select your name', 'error'); return; }
+                const members = await getFamilyMembers();
+                const user = members.find(m => m.id === userId);
+                if (user) {
+                    currentRole = 'user';
+                    currentUser = user;
+                    showUserDashboard();
+                } else {
+                    Swal.fire('Error', 'User not found', 'error');
+                }
+            } else {
+                Swal.fire('Error', 'Please select a role', 'error');
+            }
         }
 
         function showAdminDashboard() {
@@ -793,7 +1274,7 @@
             document.getElementById('appContainer').style.display = 'block';
             document.getElementById('userNameDisplay').innerHTML = '👑 Administrator';
             document.getElementById('roleBadge').innerHTML = 'Full Access';
-            document.getElementById('sidebarUserName').innerHTML = 'Admin';
+            document.getElementById('sidebarUserName').innerHTML = 'Administrator';
             document.getElementById('viewOnlyBanner').style.display = 'none';
             document.getElementById('fabButton').style.display = 'flex';
             document.getElementById('myActivitiesNav').style.display = 'none';
@@ -802,7 +1283,8 @@
             document.getElementById('paymentsNav').style.display = 'flex';
             document.getElementById('reportsNav').style.display = 'flex';
             document.getElementById('securityNav').style.display = 'flex';
-            currentPage = 'dashboard'; renderCurrentPage();
+            currentPage = 'dashboard';
+            renderCurrentPage();
             document.querySelector('.nav-item[onclick="switchPage(\'dashboard\')"]')?.classList.add('active');
         }
 
@@ -820,35 +1302,84 @@
             document.getElementById('paymentsNav').style.display = 'flex';
             document.getElementById('reportsNav').style.display = 'flex';
             document.getElementById('securityNav').style.display = 'none';
-            currentPage = 'dashboard'; renderCurrentPage();
+            currentPage = 'dashboard';
+            renderCurrentPage();
             document.querySelector('.nav-item[onclick="switchPage(\'dashboard\')"]')?.classList.add('active');
         }
 
         function logout() {
-            currentRole = null; currentUser = null;
+            currentRole = null;
+            currentUser = null;
             document.getElementById('appContainer').style.display = 'none';
             document.getElementById('loginScreen').style.display = 'block';
             document.getElementById('adminPassword').value = '';
             document.getElementById('userSelect').value = '';
         }
 
-        // Event Listeners
-        document.getElementById('addActivityForm')?.addEventListener('submit', (e) => { e.preventDefault(); if (createActivity(activityName.value, activityDesc.value, parseFloat(activityBudget.value), activityDueDate.value)) { closeModal('addActivityModal'); e.target.reset(); renderCurrentPage(); } });
-        document.getElementById('addMemberForm')?.addEventListener('submit', (e) => { e.preventDefault(); if (addMember(memberName.value, memberRole.value, memberPhone.value, memberEmail.value)) { closeModal('addMemberModal'); e.target.reset(); renderCurrentPage(); } });
-        document.getElementById('paymentForm')?.addEventListener('submit', (e) => { e.preventDefault(); if (recordPayment(parseInt(paymentActivityId.value), parseInt(paymentMemberId.value), parseFloat(paymentAmount.value), paymentDate.value, paymentNotes.value)) { closeModal('paymentModal'); e.target.reset(); renderCurrentPage(); } });
-        document.getElementById('editActivityForm')?.addEventListener('submit', (e) => { e.preventDefault(); if (updateActivity(parseInt(editActivityId.value), editActivityName.value, editActivityDesc.value, parseFloat(editActivityBudget.value), editActivityDueDate.value, editActivityStatus.value)) { closeModal('editActivityModal'); renderCurrentPage(); } });
+        // Form Event Listeners
+        document.getElementById('addActivityForm')?.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            if (await createActivity(activityName.value, activityDesc.value, parseFloat(activityBudget.value), activityDueDate.value)) {
+                closeModal('addActivityModal');
+                e.target.reset();
+                await renderCurrentPage();
+            }
+        });
 
-        // Make global
-        window.selectRole = selectRole; window.confirmLogin = confirmLogin; window.logout = logout; window.switchPage = switchPage; window.toggleSidebar = toggleSidebar;
-        window.openAddModal = openAddModal; window.closeModal = closeModal; window.openEditActivity = openEditActivity; window.deleteActivity = deleteActivity;
-        window.deleteMember = deleteMember; window.sendWhatsApp = sendWhatsApp; window.makeCall = makeCall; window.sendSMS = sendSMS;
-        window.shareFullProgress = shareFullProgress; window.sendWhatsAppToAll = sendWhatsAppToAll; window.changePassword = changePassword;
+        document.getElementById('addMemberForm')?.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            if (await addMember(memberName.value, memberRole.value, memberPhone.value, memberEmail.value)) {
+                closeModal('addMemberModal');
+                e.target.reset();
+                await renderCurrentPage();
+            }
+        });
 
-        // Start
+        document.getElementById('paymentForm')?.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            if (await recordPayment(parseInt(paymentActivityId.value), parseInt(paymentMemberId.value), parseFloat(paymentAmount.value), paymentDate.value, paymentNotes.value)) {
+                closeModal('paymentModal');
+                e.target.reset();
+                await renderCurrentPage();
+            }
+        });
+
+        document.getElementById('editActivityForm')?.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            if (await updateActivity(parseInt(editActivityId.value), editActivityName.value, editActivityDesc.value, parseFloat(editActivityBudget.value), editActivityDueDate.value, editActivityStatus.value)) {
+                closeModal('editActivityModal');
+                await renderCurrentPage();
+            }
+        });
+
+        // Make functions global
+        window.selectRole = selectRole;
+        window.confirmLogin = confirmLogin;
+        window.logout = logout;
+        window.switchPage = switchPage;
+        window.toggleSidebar = toggleSidebar;
+        window.openAddModal = openAddModal;
+        window.closeModal = closeModal;
+        window.openEditActivity = openEditActivity;
+        window.deleteActivity = deleteActivity;
+        window.deleteMember = deleteMember;
+        window.sendWhatsApp = sendWhatsApp;
+        window.makeCall = makeCall;
+        window.sendSMS = sendSMS;
+        window.shareFullProgress = shareFullProgress;
+        window.sendWhatsAppToAll = sendWhatsAppToAll;
+        window.changePassword = changePassword;
+        window.exportData = exportData;
+        window.confirmClearData = confirmClearData;
+
+        // Initialize
         (async () => {
-            await initDatabase();
-            document.getElementById('loadingScreen').style.display = 'none';
-            document.getElementById('loginScreen').style.display = 'block';
+            await initIndexedDB();
+            await initData();
+            setTimeout(() => {
+                document.getElementById('loadingScreen').style.display = 'none';
+                document.getElementById('loginScreen').style.display = 'block';
+            }, 1000);
         })();
     </script>
 </body>
