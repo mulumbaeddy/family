@@ -1324,6 +1324,300 @@ function showWelcomeNotification() {
 // showWelcomeNotification();
 
 // Expose global functions
+
+// ============================================
+// OFFLINE SUPPORT & SYNC
+// ============================================
+
+let isOnline = navigator.onLine;
+let pendingOperations = [];
+
+// Check online status
+function updateOnlineStatus() {
+    isOnline = navigator.onLine;
+    
+    if (isOnline) {
+        console.log('Back online - syncing data...');
+        syncPendingOperations();
+        showOnlineStatus('Back Online! Syncing data...', 'success');
+    } else {
+        console.log('Offline mode');
+        showOnlineStatus('You are offline. Changes will sync when online.', 'warning');
+    }
+}
+
+// Show online/offline status
+function showOnlineStatus(message, type) {
+    const statusBar = document.getElementById('onlineStatus');
+    if (statusBar) {
+        statusBar.textContent = message;
+        statusBar.className = `online-status ${type}`;
+        statusBar.style.display = 'block';
+        
+        setTimeout(() => {
+            statusBar.style.display = 'none';
+        }, 3000);
+    }
+}
+
+// Save operation for offline sync
+function saveOfflineOperation(operation, data) {
+    pendingOperations.push({
+        id: Date.now(),
+        operation: operation,
+        data: data,
+        timestamp: new Date().toISOString()
+    });
+    
+    // Save to localStorage
+    localStorage.setItem('pendingOperations', JSON.stringify(pendingOperations));
+    showOnlineStatus('Saved offline. Will sync when online.', 'info');
+}
+
+// Sync pending operations when back online
+async function syncPendingOperations() {
+    const saved = localStorage.getItem('pendingOperations');
+    if (!saved) return;
+    
+    pendingOperations = JSON.parse(saved);
+    
+    if (pendingOperations.length === 0) return;
+    
+    showOnlineStatus(`Syncing ${pendingOperations.length} pending operations...`, 'info');
+    
+    for (const op of pendingOperations) {
+        try {
+            if (op.operation === 'payment') {
+                await _supabase.from('payments').insert(op.data);
+            } else if (op.operation === 'activity') {
+                await _supabase.from('activities').insert(op.data);
+            }
+            // Remove synced operation
+            pendingOperations = pendingOperations.filter(p => p.id !== op.id);
+        } catch (error) {
+            console.error('Sync failed for operation:', op, error);
+        }
+    }
+    
+    localStorage.setItem('pendingOperations', JSON.stringify(pendingOperations));
+    
+    if (pendingOperations.length === 0) {
+        showOnlineStatus('All data synced successfully!', 'success');
+        await loadData();
+        await renderCurrentPage();
+    } else {
+        showOnlineStatus(`Synced ${pendingOperations.length} items.`, 'info');
+    }
+}
+
+// Enhanced recordPayment with offline support
+async function recordPayment(activityId, memberId, amount, date, notes) {
+    if (!isOnline) {
+        // Save for offline sync
+        saveOfflineOperation('payment', {
+            activity_id: activityId,
+            member_id: memberId,
+            amount: parseFloat(amount),
+            payment_date: date,
+            notes: notes
+        });
+        
+        Swal.fire({
+            title: 'Saved Offline',
+            text: 'You are offline. This payment will be saved and synced when you reconnect.',
+            icon: 'info',
+            confirmButtonText: 'OK'
+        });
+        return true;
+    }
+    
+    // Original online code continues here...
+    if (_currentRole !== 'admin') { 
+        Swal.fire('Access Denied', 'Only administrators can record payments', 'error'); 
+        return false; 
+    }
+    
+    const member = _familyMembers.find(m => m.id === memberId);
+    const activity = _activities.find(a => a.id === activityId);
+    
+    const { error } = await _supabase.from('payments').insert({
+        activity_id: activityId, 
+        member_id: memberId, 
+        amount: parseFloat(amount), 
+        payment_date: date, 
+        notes
+    });
+    
+    if (error) {
+        // If network error, save offline
+        if (error.message.includes('network') || error.message.includes('fetch')) {
+            saveOfflineOperation('payment', {
+                activity_id: activityId,
+                member_id: memberId,
+                amount: parseFloat(amount),
+                payment_date: date,
+                notes: notes
+            });
+            Swal.fire('Saved Offline', 'Will sync when online', 'info');
+            return true;
+        }
+        Swal.fire('Error', error.message, 'error');
+        return false;
+    }
+    
+    // Rest of payment processing...
+    const { data: memberActivity } = await _supabase
+        .from('member_activities')
+        .select('*')
+        .eq('activity_id', activityId)
+        .eq('member_id', memberId)
+        .single();
+    
+    const newPaid = (memberActivity?.amount_paid || 0) + parseFloat(amount);
+    let status = 'unpaid';
+    if (newPaid >= memberActivity.amount_owed) status = 'paid';
+    else if (newPaid > 0) status = 'partial';
+    
+    await _supabase
+        .from('member_activities')
+        .update({ amount_paid: newPaid, status })
+        .eq('activity_id', activityId)
+        .eq('member_id', memberId);
+    
+    const { data: allMemberActivities } = await _supabase
+        .from('member_activities')
+        .select('status')
+        .eq('activity_id', activityId);
+    
+    const allPaid = allMemberActivities?.every(ma => ma.status === 'paid');
+    if (allPaid) {
+        await _supabase.from('activities').update({ status: 'completed' }).eq('id', activityId);
+    }
+    
+    await loadData();
+    Swal.fire('Success!', 'Payment recorded successfully', 'success');
+    return true;
+}
+
+// Add online/offline event listeners
+window.addEventListener('online', updateOnlineStatus);
+window.addEventListener('offline', updateOnlineStatus);
+
+// Show offline banner when offline
+function showOfflineBanner() {
+    if (!isOnline) {
+        const banner = document.createElement('div');
+        banner.id = 'offlineBanner';
+        banner.innerHTML = `
+            <div style="background: #f39c12; color: white; text-align: center; padding: 8px; font-size: 12px; position: fixed; bottom: 0; left: 0; right: 0; z-index: 10000;">
+                <i class="fas fa-wifi-slash"></i> You are offline. Changes will be saved and synced when online.
+            </div>
+        `;
+        document.body.appendChild(banner);
+    } else {
+        const banner = document.getElementById('offlineBanner');
+        if (banner) banner.remove();
+    }
+}
+
+// Register Service Worker
+async function registerServiceWorker() {
+    if ('serviceWorker' in navigator) {
+        try {
+            const registration = await navigator.serviceWorker.register('/sw.js');
+            console.log('Service Worker registered successfully:', registration);
+            
+            // Request notification permission
+            if ('Notification' in window && Notification.permission !== 'granted') {
+                const permission = await Notification.requestPermission();
+                if (permission === 'granted') {
+                    console.log('Notification permission granted');
+                }
+            }
+            
+            // Background sync
+            if ('sync' in registration) {
+                registration.sync.register('sync-payments');
+                console.log('Background sync registered');
+            }
+            
+            return registration;
+        } catch (error) {
+            console.error('Service Worker registration failed:', error);
+        }
+    }
+}
+
+// Cache data for offline use
+async function cacheOfflineData() {
+    if (!isOnline) return;
+    
+    try {
+        // Cache current activities and members
+        const cache = await caches.open('obunangwe-data');
+        
+        const activities = _activities;
+        const members = _familyMembers;
+        
+        await cache.put('/api/activities', new Response(JSON.stringify(activities)));
+        await cache.put('/api/members', new Response(JSON.stringify(members)));
+        
+        console.log('Offline data cached');
+    } catch (error) {
+        console.error('Cache failed:', error);
+    }
+}
+
+// Load cached data when offline
+async function loadCachedData() {
+    if (isOnline) return;
+    
+    try {
+        const cache = await caches.open('obunangwe-data');
+        
+        const cachedActivities = await cache.match('/api/activities');
+        const cachedMembers = await cache.match('/api/members');
+        
+        if (cachedActivities) {
+            const activities = await cachedActivities.json();
+            _activities = activities;
+            console.log('Loaded activities from cache');
+        }
+        
+        if (cachedMembers) {
+            const members = await cachedMembers.json();
+            _familyMembers = members;
+            console.log('Loaded members from cache');
+        }
+        
+        await renderCurrentPage();
+        showOnlineStatus('Showing cached data. Connect to internet for updates.', 'warning');
+    } catch (error) {
+        console.error('Failed to load cached data:', error);
+    }
+}
+
+// Initialize offline support
+function initOfflineSupport() {
+    updateOnlineStatus();
+    showOfflineBanner();
+    registerServiceWorker();
+    
+    // Periodically check online status
+    setInterval(() => {
+        if (isOnline !== navigator.onLine) {
+            updateOnlineStatus();
+            showOfflineBanner();
+        }
+    }, 3000);
+    
+    // Cache data every 5 minutes when online
+    setInterval(() => {
+        if (isOnline) {
+            cacheOfflineData();
+        }
+    }, 300000);
+}
 window.selectRole = selectRole;
 window.confirmLogin = confirmLogin;
 window.logout = logout;

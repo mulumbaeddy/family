@@ -745,4 +745,57 @@ input, select, textarea { width: 100%; padding: 10px; border: 1px solid #ddd; bo
     color: var(--primary-orange);
     cursor: pointer;
     font-size: 12px;
+
+
+
+}
+
+/* Online/Offline Status */
+.online-status {
+    position: fixed;
+    bottom: 20px;
+    left: 20px;
+    right: 20px;
+    background: #27ae60;
+    color: white;
+    text-align: center;
+    padding: 10px;
+    border-radius: 10px;
+    font-size: 12px;
+    z-index: 10001;
+    animation: slideUp 0.3s ease;
+    display: none;
+}
+
+.online-status.warning {
+    background: #f39c12;
+}
+
+.online-status.error {
+    background: #e74c3c;
+}
+
+.online-status.info {
+    background: #3498db;
+}
+
+@keyframes slideUp {
+    from {
+        transform: translateY(100%);
+        opacity: 0;
+    }
+    to {
+        transform: translateY(0);
+        opacity: 1;
+    }
+}
+
+/* Offline indicator */
+.offline-mode {
+    background: #f39c12 !important;
+}
+
+/* Sync indicator */
+.syncing {
+    animation: pulse 1s infinite;
 }
