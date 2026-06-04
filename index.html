@@ -15,6 +15,7 @@
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
+
 <body>
     <div id="loadingScreen" class="loading-screen">
         <i class="fas fa-hand-holding-heart fa-pulse" style="font-size: 64px; margin-bottom: 20px;"></i>
@@ -144,6 +145,29 @@
     <div id="activityDetailsContent"></div></div></div>
 
     <div id="toastContainer" class="toast-container"></div>
+
+    <!-- Notification Bell -->
+<div class="notification-bell" onclick="openNotificationCenter()" style="display: none;" id="notificationBell">
+    <i class="fas fa-bell"></i>
+    <span class="notification-badge" id="notificationCount">0</span>
+</div>
+
+<!-- Notification Center Modal -->
+<div id="notificationModal" class="modal">
+    <div class="modal-content notification-center">
+        <div class="modal-header">
+            <h3><i class="fas fa-bell"></i> Notifications</h3>
+            <button class="close-modal" onclick="closeModal('notificationModal')">&times;</button>
+        </div>
+        <div style="text-align: right; margin-bottom: 15px;">
+            <button class="mark-all-read" onclick="markAllNotificationsRead()">Mark all as read</button>
+        </div>
+        <div id="notificationsList">
+            <p style="text-align: center; color: #999;">No notifications</p>
+        </div>
+    </div>
+</div>
+    
 
     <script src="script.js"></script>
 </body>

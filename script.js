@@ -955,6 +955,373 @@ document.getElementById('editActivityForm')?.addEventListener('submit', async (e
         await renderCurrentPage();
     }
 });
+// ============================================
+// POPUP NOTIFICATION SYSTEM
+// ============================================
+let notifications = [];
+let notificationIdCounter = 0;
+
+// Load saved notifications from localStorage
+function loadNotifications() {
+    const saved = localStorage.getItem('obunangwe_notifications');
+    if (saved) {
+        notifications = JSON.parse(saved);
+        notificationIdCounter = notifications.length > 0 ? Math.max(...notifications.map(n => n.id)) + 1 : 0;
+        updateNotificationBadge();
+    }
+}
+
+// Save notifications to localStorage
+function saveNotifications() {
+    localStorage.setItem('obunangwe_notifications', JSON.stringify(notifications));
+    updateNotificationBadge();
+}
+
+// Update bell badge count
+function updateNotificationBadge() {
+    const unreadCount = notifications.filter(n => !n.read).length;
+    const badge = document.getElementById('notificationCount');
+    const bell = document.getElementById('notificationBell');
+    
+    if (badge) {
+        badge.textContent = unreadCount;
+        badge.style.display = unreadCount > 0 ? 'flex' : 'none';
+    }
+    
+    if (bell) {
+        bell.style.display = _currentRole ? 'flex' : 'none';
+    }
+}
+
+// Show popup notification on screen
+function showPopupNotification(title, message, type = 'info', duration = 6000) {
+    // Create popup element
+    const popup = document.createElement('div');
+    popup.className = `notification-popup ${type}`;
+    popup.setAttribute('role', 'alert');
+    
+    // Get icon based on type
+    let icon = 'fa-info-circle';
+    if (type === 'success') icon = 'fa-check-circle';
+    if (type === 'warning') icon = 'fa-exclamation-triangle';
+    if (type === 'error') icon = 'fa-times-circle';
+    
+    popup.innerHTML = `
+        <div class="notification-header">
+            <i class="fas ${icon}"></i>
+            <h4>${title}</h4>
+            <button class="notification-close" onclick="this.closest('.notification-popup').remove()">×</button>
+        </div>
+        <div class="notification-body">
+            <p>${message}</p>
+            <small class="notification-time">${new Date().toLocaleTimeString()}</small>
+        </div>
+    `;
+    
+    // Click to open notification center
+    popup.addEventListener('click', (e) => {
+        if (!e.target.classList.contains('notification-close')) {
+            openNotificationCenter();
+        }
+    });
+    
+    document.body.appendChild(popup);
+    
+    // Auto remove after duration
+    const timeout = setTimeout(() => {
+        if (popup.parentElement) {
+            popup.style.animation = 'slideOutUp 0.3s ease';
+            setTimeout(() => popup.remove(), 300);
+        }
+    }, duration);
+    
+    popup._timeout = timeout;
+    
+    // Vibrate on mobile
+    if (window.navigator && window.navigator.vibrate) {
+        window.navigator.vibrate(200);
+    }
+    
+    return popup;
+}
+
+// Add notification to history
+function addNotification(title, message, type = 'info', relatedId = null) {
+    const notification = {
+        id: notificationIdCounter++,
+        title: title,
+        message: message,
+        type: type,
+        timestamp: new Date().toISOString(),
+        read: false,
+        relatedId: relatedId
+    };
+    
+    notifications.unshift(notification); // Add to beginning
+    if (notifications.length > 50) notifications.pop(); // Keep only last 50
+    
+    saveNotifications();
+    showPopupNotification(title, message, type);
+    
+    return notification;
+}
+
+// Open notification center
+function openNotificationCenter() {
+    renderNotificationsList();
+    document.getElementById('notificationModal').style.display = 'flex';
+}
+
+// Render notifications list
+function renderNotificationsList() {
+    const container = document.getElementById('notificationsList');
+    if (!container) return;
+    
+    if (notifications.length === 0) {
+        container.innerHTML = '<p style="text-align: center; color: #999;">No notifications</p>';
+        return;
+    }
+    
+    container.innerHTML = notifications.map(notif => {
+        let icon = 'fa-info-circle';
+        if (notif.type === 'success') icon = 'fa-check-circle';
+        if (notif.type === 'warning') icon = 'fa-exclamation-triangle';
+        if (notif.type === 'error') icon = 'fa-times-circle';
+        
+        return `
+            <div class="notification-item ${notif.read ? '' : 'unread'}" onclick="markNotificationRead(${notif.id})">
+                <div class="notification-icon ${notif.type}">
+                    <i class="fas ${icon}"></i>
+                </div>
+                <div class="notification-content">
+                    <div class="notification-title">${notif.title}</div>
+                    <div class="notification-message">${notif.message}</div>
+                    <div class="notification-date">${new Date(notif.timestamp).toLocaleString()}</div>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+// Mark single notification as read
+function markNotificationRead(id) {
+    const notif = notifications.find(n => n.id === id);
+    if (notif) {
+        notif.read = true;
+        saveNotifications();
+        renderNotificationsList();
+    }
+}
+
+// Mark all as read
+function markAllNotificationsRead() {
+    notifications.forEach(n => n.read = true);
+    saveNotifications();
+    renderNotificationsList();
+}
+
+// ============================================
+// TRIGGER NOTIFICATIONS FOR EVENTS
+// ============================================
+
+// Enhanced createActivity with popup notification
+async function createActivity(name, desc, budget, dueDate) {
+    if (_currentRole !== 'admin') { 
+        Swal.fire('Access Denied', 'Only administrators can create activities', 'error'); 
+        return false; 
+    }
+    
+    const members = await getFamilyMembers();
+    if (members.length === 0) {
+        Swal.fire('Error', 'No family members found. Please add members first.', 'error');
+        return false;
+    }
+    
+    const { data: activity, error } = await _supabase
+        .from('activities')
+        .insert({ name, description: desc, total_budget: parseFloat(budget), expected_completion_date: dueDate, status: 'active' })
+        .select();
+    
+    if (error) { Swal.fire('Error', error.message, 'error'); return false; }
+    
+    const activityId = activity[0].id;
+    const amountPerPerson = parseFloat(budget) / members.length;
+    
+    for (const member of members) {
+        await _supabase.from('member_activities').insert({
+            activity_id: activityId, member_id: member.id, amount_owed: amountPerPerson, amount_paid: 0, status: 'unpaid'
+        });
+        
+        // Send notification to each member
+        if (_currentRole === 'admin' && member.id !== 0) {
+            addNotification(
+                '📢 New Activity Created',
+                `"${name}" - Your share: UGX ${amountPerPerson.toLocaleString()}`,
+                'info',
+                activityId
+            );
+        }
+    }
+    
+    await loadData();
+    
+    // Admin notification
+    addNotification(
+        '✅ Activity Created',
+        `"${name}" assigned to ${members.length} members. Each owes UGX ${amountPerPerson.toLocaleString()}`,
+        'success',
+        activityId
+    );
+    
+    Swal.fire('Success!', `Activity "${name}" created successfully.`, 'success');
+    return true;
+}
+
+// Enhanced recordPayment with popup notification
+async function recordPayment(activityId, memberId, amount, date, notes) {
+    if (_currentRole !== 'admin') { 
+        Swal.fire('Access Denied', 'Only administrators can record payments', 'error'); 
+        return false; 
+    }
+    
+    const member = _familyMembers.find(m => m.id === memberId);
+    const activity = _activities.find(a => a.id === activityId);
+    
+    await _supabase.from('payments').insert({
+        activity_id: activityId, member_id: memberId, amount: parseFloat(amount), payment_date: date, notes
+    });
+    
+    const { data: memberActivity } = await _supabase
+        .from('member_activities')
+        .select('*')
+        .eq('activity_id', activityId)
+        .eq('member_id', memberId)
+        .single();
+    
+    const newPaid = (memberActivity?.amount_paid || 0) + parseFloat(amount);
+    let status = 'unpaid';
+    if (newPaid >= memberActivity.amount_owed) status = 'paid';
+    else if (newPaid > 0) status = 'partial';
+    
+    await _supabase
+        .from('member_activities')
+        .update({ amount_paid: newPaid, status })
+        .eq('activity_id', activityId)
+        .eq('member_id', memberId);
+    
+    const { data: allMemberActivities } = await _supabase
+        .from('member_activities')
+        .select('status')
+        .eq('activity_id', activityId);
+    
+    const allPaid = allMemberActivities?.every(ma => ma.status === 'paid');
+    if (allPaid) {
+        await _supabase.from('activities').update({ status: 'completed' }).eq('id', activityId);
+        
+        // Notify all members when activity is completed
+        for (const m of _familyMembers) {
+            addNotification(
+                '🎉 Activity Completed!',
+                `"${activity?.name}" is now complete! Thank you for your contribution.`,
+                'success',
+                activityId
+            );
+        }
+    }
+    
+    // Payment notification
+    addNotification(
+        '💰 Payment Recorded',
+        `${member?.name} paid UGX ${parseFloat(amount).toLocaleString()} for "${activity?.name}". Remaining: UGX ${(memberActivity.amount_owed - newPaid).toLocaleString()}`,
+        'success',
+        activityId
+    );
+    
+    // Notify the member who paid
+    if (member && member.id !== 0) {
+        addNotification(
+            '✅ Payment Confirmed',
+            `Your payment of UGX ${parseFloat(amount).toLocaleString()} for "${activity?.name}" has been recorded.`,
+            'success',
+            activityId
+        );
+    }
+    
+    await loadData();
+    Swal.fire('Success!', 'Payment recorded successfully', 'success');
+    return true;
+}
+
+// Enhanced updateActivity with completion notification
+async function updateActivity(id, name, desc, budget, dueDate, status) {
+    if (_currentRole !== 'admin') { 
+        Swal.fire('Access Denied', 'Only administrators can edit activities', 'error'); 
+        return false; 
+    }
+    
+    const oldActivity = _activities.find(a => a.id === id);
+    const { error } = await _supabase
+        .from('activities')
+        .update({ name, description: desc, total_budget: parseFloat(budget), expected_completion_date: dueDate, status })
+        .eq('id', id);
+    
+    if (error) { Swal.fire('Error', error.message, 'error'); return false; }
+    
+    if (status === 'completed' && oldActivity?.status !== 'completed') {
+        // Notify all members
+        for (const member of _familyMembers) {
+            addNotification(
+                '🎉 Activity Completed! 🎉',
+                `"${name}" has been successfully completed! Thank you for your contribution.`,
+                'success',
+                id
+            );
+        }
+    }
+    
+    const members = await getFamilyMembers();
+    const newAmount = parseFloat(budget) / members.length;
+    await _supabase.from('member_activities').update({ amount_owed: newAmount }).eq('activity_id', id);
+    
+    await loadData();
+    await renderCurrentPage();
+    
+    addNotification(
+        '📝 Activity Updated',
+        `"${name}" has been updated. Status: ${status}`,
+        'info',
+        id
+    );
+    
+    Swal.fire('Updated!', 'Activity updated successfully', 'success');
+    return true;
+}
+
+// Load notifications on startup
+loadNotifications();
+
+// Show welcome notification after login
+function showWelcomeNotification() {
+    setTimeout(() => {
+        if (_currentRole === 'admin') {
+            addNotification(
+                '👋 Welcome Administrator!',
+                'You have full control over the system. Create activities, record payments, and share reports.',
+                'success'
+            );
+        } else if (_currentRole === 'user') {
+            addNotification(
+                `👋 Welcome ${_currentUser.name}!`,
+                'You can view your activities, payment status, and family members.',
+                'success'
+            );
+        }
+    }, 1500);
+}
+
+// Call this after successful login
+// Add to showAdminDashboard and showUserDashboard:
+// showWelcomeNotification();
 
 // Expose global functions
 window.selectRole = selectRole;
