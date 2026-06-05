@@ -1055,22 +1055,51 @@ function openEditMember(id) {
 function closeModal(id) { document.getElementById(id).style.display = 'none'; }
 
 async function changePassword() {
-    Swal.fire({
-        title: 'Change Password',
-        html: '<input id="newPwd" class="swal2-input" placeholder="New Password"><input id="confirmPwd" class="swal2-input" placeholder="Confirm">',
+    const { value: password } = await Swal.fire({
+        title: 'Change Admin Password',
+        html: `
+            <div style="text-align: left;">
+                <p style="margin-bottom: 10px;">Enter new password:</p>
+                <input type="password" id="newPassword" class="swal2-input" placeholder="New password" style="width: 100%;">
+                <input type="password" id="confirmPassword" class="swal2-input" placeholder="Confirm password" style="width: 100%; margin-top: 10px;">
+                <p style="font-size: 12px; color: #666; margin-top: 10px;">Minimum 4 characters</p>
+            </div>
+        `,
+        focusConfirm: false,
         preConfirm: () => {
-            const pwd = document.getElementById('newPwd').value;
-            const confirm = document.getElementById('confirmPwd').value;
-            if (pwd !== confirm) { Swal.showValidationMessage('Passwords do not match'); return false; }
-            if (pwd.length < 4) { Swal.showValidationMessage('Min 4 characters'); return false; }
-            return pwd;
-        }
-    }).then(async (result) => {
-        if (result.isConfirmed) {
-            await _supabase.from('admin_settings').upsert({ setting_key: 'admin_password', setting_value: result.value });
-            Swal.fire('Success!', 'Password changed', 'success');
-        }
+            const newPwd = document.getElementById('newPassword').value;
+            const confirmPwd = document.getElementById('confirmPassword').value;
+            
+            if (!newPwd) {
+                Swal.showValidationMessage('Please enter a password');
+                return false;
+            }
+            if (newPwd.length < 4) {
+                Swal.showValidationMessage('Password must be at least 4 characters');
+                return false;
+            }
+            if (newPwd !== confirmPwd) {
+                Swal.showValidationMessage('Passwords do not match');
+                return false;
+            }
+            return newPwd;
+        },
+        showCancelButton: true,
+        confirmButtonText: 'Change Password',
+        cancelButtonText: 'Cancel'
     });
+    
+    if (password) {
+        // Store password in localStorage
+        localStorage.setItem('admin_password', password);
+        
+        Swal.fire({
+            title: 'Success!',
+            text: 'Admin password has been changed successfully.',
+            icon: 'success',
+            confirmButtonText: 'OK'
+        });
+    }
 }
 
 function switchPage(page) {
@@ -1109,8 +1138,18 @@ function selectRole(role) {
 }
 
 async function confirmLogin() {
-    const { data: adminSetting } = await _supabase.from('admin_settings').select('setting_value').eq('setting_key', 'admin_password').single();
-    const storedPwd = adminSetting?.setting_value || 'admin123';
+    // Try to get password from localStorage first, then from database
+    let storedPwd = localStorage.getItem('admin_password');
+    
+    if (!storedPwd) {
+        // Fallback to database
+        const { data: adminSetting } = await _supabase
+            .from('admin_settings')
+            .select('setting_value')
+            .eq('setting_key', 'admin_password')
+            .single();
+        storedPwd = adminSetting?.setting_value || 'admin123';
+    }
     
     if (_selectedRole === 'admin') {
         const pwd = document.getElementById('adminPassword').value;
@@ -1119,21 +1158,10 @@ async function confirmLogin() {
             _currentUser = { id: 0, name: 'Administrator' };
             showAdminDashboard();
         } else {
-            Swal.fire('Error', 'Invalid password! Default: admin123', 'error');
+            Swal.fire('Error', 'Invalid password!', 'error');
         }
     } else if (_selectedRole === 'user') {
-        const userId = parseInt(document.getElementById('userSelect').value);
-        if (!userId) { Swal.fire('Error', 'Please select your name', 'error'); return; }
-        const user = _familyMembers.find(m => m.id === userId);
-        if (user) {
-            _currentRole = 'user';
-            _currentUser = user;
-            showUserDashboard();
-        } else {
-            Swal.fire('Error', 'User not found', 'error');
-        }
-    } else {
-        Swal.fire('Error', 'Please select a role', 'error');
+        // ... rest of user login code
     }
 }
 
