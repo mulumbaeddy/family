@@ -211,6 +211,109 @@ async function getUserStatistics(userId) {
 }
 
 // ============================================
+// DELETE PAYMENT FUNCTION
+// ============================================
+// ============================================
+// DELETE PAYMENT FUNCTION - FIXED
+// ============================================
+async function deletePayment(paymentId) {
+    if (_currentRole !== 'admin') {
+        Swal.fire('Access Denied', 'Only administrators can delete payments', 'error');
+        return false;
+    }
+    
+    const result = await Swal.fire({
+        title: 'Delete Payment?',
+        text: 'This action cannot be undone. Are you sure?',
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#e74c3c',
+        cancelButtonColor: '#95a5a6',
+        confirmButtonText: 'Yes, delete it!',
+        cancelButtonText: 'Cancel'
+    });
+    
+    if (!result.isConfirmed) return false;
+    
+    try {
+        // First, get payment details directly without the relation that might fail
+        const { data: payment, error: paymentError } = await _supabase
+            .from('payments')
+            .select('*')
+            .eq('id', paymentId)
+            .single();
+        
+        if (paymentError || !payment) {
+            console.error('Payment fetch error:', paymentError);
+            Swal.fire('Error', 'Payment not found. It may have been already deleted.', 'error');
+            return false;
+        }
+        
+        const activityId = payment.activity_id;
+        const memberId = payment.member_id;
+        const amount = payment.amount;
+        
+        // Delete the payment
+        const { error: deleteError } = await _supabase
+            .from('payments')
+            .delete()
+            .eq('id', paymentId);
+        
+        if (deleteError) {
+            console.error('Delete error:', deleteError);
+            Swal.fire('Error', deleteError.message, 'error');
+            return false;
+        }
+        
+        // Update member_activities amounts
+        const { data: memberActivity, error: memberError } = await _supabase
+            .from('member_activities')
+            .select('*')
+            .eq('activity_id', activityId)
+            .eq('member_id', memberId)
+            .single();
+        
+        if (memberActivity && !memberError) {
+            const newPaid = (memberActivity.amount_paid || 0) - amount;
+            let status = 'unpaid';
+            if (newPaid >= memberActivity.amount_owed) status = 'paid';
+            else if (newPaid > 0) status = 'partial';
+            
+            await _supabase
+                .from('member_activities')
+                .update({ amount_paid: newPaid, status })
+                .eq('activity_id', activityId)
+                .eq('member_id', memberId);
+            
+            // Check if activity should be un-completed
+            const { data: allMemberActivities } = await _supabase
+                .from('member_activities')
+                .select('status')
+                .eq('activity_id', activityId);
+            
+            const allPaid = allMemberActivities?.every(ma => ma.status === 'paid');
+            if (!allPaid && allMemberActivities && allMemberActivities.length > 0) {
+                await _supabase
+                    .from('activities')
+                    .update({ status: 'active' })
+                    .eq('id', activityId);
+            }
+        }
+        
+        await loadData();
+        await renderCurrentPage();
+        
+        queueToast('✅ Payment Deleted', 'Payment has been removed successfully', 'success', 3000);
+        Swal.fire('Deleted!', 'Payment has been deleted.', 'success');
+        return true;
+        
+    } catch (error) {
+        console.error('Unexpected error:', error);
+        Swal.fire('Error', 'An unexpected error occurred', 'error');
+        return false;
+    }
+}
+// ============================================
 // CRUD OPERATIONS
 // ============================================
 async function createActivity(name, desc, budget, dueDate) {
@@ -429,12 +532,14 @@ async function showActivityDetails(activityId) {
     
     for (const mp of activity.memberPayments || []) {
         const balance = mp.amount_owed - mp.amount_paid;
-        html += `<tr><td>${mp.family_members?.name || 'Unknown'}</td>
+        html += `<tr>
+            <td>${mp.family_members?.name || 'Unknown'}</td>
             <td>${mp.family_members?.role === 'parent' ? 'Parent' : 'Child'}</td>
             <td>UGX ${mp.amount_owed.toLocaleString()}</td>
             <td>UGX ${mp.amount_paid.toLocaleString()}</td>
             <td class="${balance === 0 ? 'paid-status' : 'unpaid-status'}">UGX ${balance.toLocaleString()}</td>
-            <td>${mp.status === 'paid' ? '✅ Paid' : mp.status === 'partial' ? '⚠️ Partial' : '❌ Unpaid'}</td></tr>`;
+            <td>${mp.status === 'paid' ? '✅ Paid' : mp.status === 'partial' ? '⚠️ Partial' : '❌ Unpaid'}</td>
+        </tr>`;
     }
     html += `</tbody></table></div>`;
     document.getElementById('activityDetailsContent').innerHTML = html;
@@ -476,27 +581,56 @@ function setupRealtimeNotifications() {
 async function renderAdminDashboard() {
     const stats = await getStatistics();
     const acts = await getActivities();
+    const members = await getFamilyMembers();
+    
+    // Calculate member stats for dashboard
+    const memberStats = [];
+    for (const m of members.slice(0, 5)) { // Only first 5 for dashboard
+        const s = await getUserStatistics(m.id);
+        memberStats.push({ ...m, stats: s });
+    }
+    
     document.getElementById('pageContent').innerHTML = `
         <div class="stats-grid">
             <div class="stat-card" onclick="switchPage('activities')"><div class="stat-number">${stats.activeActivities}</div><h3>Active Activities</h3></div>
             <div class="stat-card" onclick="switchPage('activities')"><div class="stat-number">${stats.completedActivities}</div><h3>Completed</h3></div>
-            <div class="stat-card" onclick="switchPage('payments')"><div class="stat-number">UGX ${stats.totalCollected.toLocaleString()}</div><h3>Total Collected</h3></div>
-            <div class="stat-card" onclick="switchPage('reports')"><div class="stat-number">UGX ${(stats.totalOwed - stats.totalCollected).toLocaleString()}</div><h3>Pending</h3></div>
+            <div class="stat-card" onclick="switchPage('payments')"><div class="stat-number">UGX ${(stats.totalCollected || 0).toLocaleString()}</div><h3>Total Collected</h3></div>
+            <div class="stat-card" onclick="switchPage('reports')"><div class="stat-number">UGX ${((stats.totalOwed || 0) - (stats.totalCollected || 0)).toLocaleString()}</div><h3>Pending</h3></div>
         </div>
-        <div class="card"><h2>Recent Activities <button class="btn-whatsapp" onclick="generateShareableReport()"><i class="fab fa-whatsapp"></i> Share Report</button></h2>
-        <div style="overflow-x:auto"><table class="data-table"><thead><tr><th>Activity</th><th>Budget</th><th>Due Date</th><th>Members Paid</th><th>Status</th><th>Action</th></tr></thead><tbody>
-        ${acts.slice(0,5).map(a => {
-            const collected = a.memberPayments?.reduce((sum, mp) => sum + (mp.amount_paid || 0), 0) || 0;
-            const progress = (collected / a.totalBudget * 100).toFixed(0);
-            const paidCount = a.memberPayments?.filter(mp => mp.status === 'paid').length || 0;
-            const totalMembers = a.memberPayments?.length || 0;
-            return `<tr><td><strong>${a.name}</strong></td><td>UGX ${(a.totalBudget || 0).toLocaleString()}</td>
-                <td>${new Date(a.expectedCompletionDate).toLocaleDateString()}</td>
-                <td>${paidCount}/${totalMembers} (${progress}%)</td>
-                <td><span class="badge badge-${a.status}">${a.status}</span></td>
-                <td><button class="btn-edit" onclick="showActivityDetails(${a.id})">View</button></td></tr>`;
-        }).join('') || '<tr><td colspan="6">No activities</td></tr>'}
-        </tbody></table></div></div>`;
+        
+        <div class="card">
+            <h2>Recent Activities 
+                <button class="btn-whatsapp" onclick="generateShareableReport()">
+                    <i class="fab fa-whatsapp"></i> Share Report
+                </button>
+            </h2>
+            <div style="overflow-x:auto">
+                <table class="data-table">
+                    <thead>
+                        <tr><th>Activity</th><th>Budget</th><th>Due Date</th><th>Members Paid</th><th>Status</th><th>Action</th></tr>
+                    </thead>
+                    <tbody>
+                        ${acts.slice(0,5).map(a => {
+                            const collected = a.memberPayments?.reduce((sum, mp) => sum + (mp.amount_paid || 0), 0) || 0;
+                            const progress = (collected / (a.totalBudget || 1) * 100).toFixed(0);
+                            const paidCount = a.memberPayments?.filter(mp => mp.status === 'paid').length || 0;
+                            const totalMembers = a.memberPayments?.length || 0;
+                            return `
+                                <tr>
+                                    <td><strong>${a.name || 'Unknown'}</strong></div>
+                                    <td>UGX ${(a.totalBudget || 0).toLocaleString()}</div>
+                                    <td>${a.expectedCompletionDate ? new Date(a.expectedCompletionDate).toLocaleDateString() : 'No date'}</div>
+                                    <td>${paidCount}/${totalMembers} (${progress}%)</div>
+                                    <td><span class="badge badge-${a.status || 'active'}">${a.status || 'active'}</span></div>
+                                    <td><button class="btn-edit" onclick="showActivityDetails(${a.id})">View</button></div>
+                                </tr>
+                            `;
+                        }).join('') || '<tr><td colspan="6">No activities</td></tr>'}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    `;
 }
 
 async function renderUserDashboard() {
@@ -512,24 +646,28 @@ async function renderUserDashboard() {
         </div>
         <div class="card"><h2>Family Members (${members.length})</h2>
         <div style="overflow-x:auto"><table class="data-table"><thead><tr><th>Avatar</th><th>Name</th><th>Role</th><th>Contact</th></tr></thead><tbody>
-        ${members.map(m => `<tr><td><span style="font-size:24px">${m.role === 'parent' ? '👨‍👩' : '🧒'}</span></td>
+        ${members.map(m => `<tr>
+            <td><span style="font-size:24px">${m.role === 'parent' ? '👨‍👩' : '🧒'}</span></td>
             <td><strong>${m.name}</strong> ${m.id === _currentUser.id ? '(You)' : ''}</td>
             <td>${m.role === 'parent' ? 'Parent' : 'Child'}</td>
             <td>${m.phone ? `<button class="whatsapp-btn" onclick="sendWhatsApp('${m.phone}', 'Hello from OBUNANGWE BULAIIRE!')" style="padding:4px 8px"><i class="fab fa-whatsapp"></i></button>
-            <button class="call-btn" onclick="makeCall('${m.phone}')" style="padding:4px 8px"><i class="fas fa-phone"></i></button>` : '-'}</td></tr>`).join('')}
-        </tbody></table></div></div>
+            <button class="call-btn" onclick="makeCall('${m.phone}')" style="padding:4px 8px"><i class="fas fa-phone"></i></button>` : '-'}</td>
+        </tr>`).join('')}
+        </tbody>}</div></div>
         <div class="card"><h2>My Recent Activities</h2>
         <div style="overflow-x:auto"><table class="data-table"><thead><tr><th>Activity</th><th>My Share</th><th>I've Paid</th><th>Balance</th><th>Due Date</th><th>Status</th></tr></thead><tbody>
         ${userActivities.slice(0,5).map(a => {
             const balance = a.memberData.amountOwed - a.memberData.amountPaid;
-            return `<tr><td><strong>${a.name}</strong> ${a.status === 'completed' ? '✅' : ''}</td>
+            return `<tr>
+                <td><strong>${a.name}</strong> ${a.status === 'completed' ? '✅' : ''}</td>
                 <td>UGX ${a.memberData.amountOwed.toLocaleString()}</td>
                 <td>UGX ${a.memberData.amountPaid.toLocaleString()}</td>
                 <td class="${balance === 0 ? 'paid-status' : 'unpaid-status'}">UGX ${balance.toLocaleString()}</td>
                 <td>${new Date(a.expectedCompletionDate).toLocaleDateString()}</td>
-                <td class="${balance === 0 ? 'paid-status' : 'unpaid-status'}">${balance === 0 ? '✅ Paid' : '❌ Pending'}</td></tr>`;
-        }).join('') || '<tr><td colspan="6">No activities assigned</td></tr>'}
-        </tbody></table></div></div>`;
+                <td class="${balance === 0 ? 'paid-status' : 'unpaid-status'}">${balance === 0 ? '✅ Paid' : '❌ Pending'}</td>
+            </tr>`;
+        }).join('') || '<tr><td colspan="6">No activities assigned</td</tr>'}
+        </tbody>}</div></div>`;
 }
 
 async function renderAdminActivities() {
@@ -571,41 +709,87 @@ async function renderUserMyActivities() {
 
 async function renderAdminMembers() {
     const members = await getFamilyMembers();
+    
+    // Create an array to store member stats
+    const memberStats = [];
+    for (const m of members) {
+        const stats = await getUserStatistics(m.id);
+        memberStats.push({ ...m, stats });
+    }
+    
     document.getElementById('pageContent').innerHTML = `
-        <div class="card"><h2>Family Members <button class="btn-primary" onclick="openAddModal()"><i class="fas fa-plus"></i> Add Member</button></h2>
-        <div style="overflow-x:auto"><table class="data-table"><thead><tr><th>Avatar</th><th>Name</th><th>Role</th><th>Phone</th><th>Email</th><th>Actions</th></tr></thead><tbody>
-        ${members.map(m => `<tr>
-            <td><span style="font-size:24px">${m.role === 'parent' ? '👨‍👩' : '🧒'}</span></td>
-            <td><strong>${m.name}</strong></td><td>${m.role === 'parent' ? 'Parent' : 'Child'}</td>
-            <td>${m.phone || '-'}</td><td>${m.email || '-'}</td>
-            <td><button class="btn-edit" onclick="openEditMember(${m.id})">Edit</button>
-            <button class="btn-danger" onclick="deleteMember(${m.id})">Remove</button>
-            ${m.phone ? `<button class="btn-whatsapp" onclick="sendWhatsApp('${m.phone}', 'Hello from OBUNANGWE BULAIIRE!')" style="margin-left:5px;padding:5px 10px"><i class="fab fa-whatsapp"></i></button>` : ''}</td>
-        </tr>`).join('')}
-        </tbody>}</table></div></div>
-        <div class="card"><h2>Member Payment Summary</h2>
-        <div style="overflow-x:auto"><table class="data-table"><thead><tr><th>Member</th><th>Role</th><th>Total Owed</th><th>Total Paid</th><th>Balance</th><th>Status</th></tr></thead><tbody>
-        ${await Promise.all(members.map(async m => {
-            const stats = await getUserStatistics(m.id);
-            return `<tr><td><strong>${m.name}</strong></td><td>${m.role === 'parent' ? 'Parent' : 'Child'}</td>
-                <td>UGX ${stats.totalOwed.toLocaleString()}</td><td>UGX ${stats.totalPaid.toLocaleString()}</td>
-                <td class="${stats.balance === 0 ? 'paid-status' : 'unpaid-status'}">UGX ${stats.balance.toLocaleString()}</td>
-                <td>${stats.balance === 0 ? '✅ Settled' : stats.balance > 0 ? '⚠️ Pending' : '✅ Overpaid'}</td>
-            </tr>`;
-        }))}
-        </tbody>}</table></div></div>`;
+        <div class="card">
+            <h2>Family Members 
+                <button class="btn-primary" onclick="openAddModal()">
+                    <i class="fas fa-plus"></i> Add Member
+                </button>
+            </h2>
+            <div style="overflow-x:auto">
+                <table class="data-table">
+                    <thead>
+                        <tr><th>Avatar</th><th>Name</th><th>Role</th><th>Phone</th><th>Email</th><th>Actions</th></tr>
+                    </thead>
+                    <tbody>
+                        ${members.map(m => `
+                            <tr>
+                                <td><span style="font-size:24px">${m.role === 'parent' ? '👨‍👩' : '🧒'}</span></td>
+                                <td><strong>${m.name}</strong></td>
+                                <td>${m.role === 'parent' ? 'Parent' : 'Child'}</td>
+                                <td>${m.phone || '-'}</td>
+                                <td>${m.email || '-'}</td>
+                                <td>
+                                    <button class="btn-edit" onclick="openEditMember(${m.id})">Edit</button>
+                                    <button class="btn-danger" onclick="deleteMember(${m.id})">Remove</button>
+                                    ${m.phone ? `<button class="btn-whatsapp" onclick="sendWhatsApp('${m.phone}', 'Hello from OBUNANGWE BULAIIRE!')" style="margin-left:5px;padding:5px 10px"><i class="fab fa-whatsapp"></i></button>` : ''}
+                                </td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        
+        <div class="card">
+            <h2>Member Payment Summary</h2>
+            <div style="overflow-x:auto">
+                <table class="data-table">
+                    <thead>
+                        <tr><th>Member</th><th>Role</th><th>Total Owed</th><th>Total Paid</th><th>Balance</th><th>Status</th></tr>
+                    </thead>
+                    <tbody>
+                        ${memberStats.map(m => `
+                            <tr>
+                                <td><strong>${m.name}</strong></td>
+                                <td>${m.role === 'parent' ? 'Parent' : 'Child'}</td>
+                                <td>UGX ${(m.stats.totalOwed || 0).toLocaleString()}</td>
+                                <td>UGX ${(m.stats.totalPaid || 0).toLocaleString()}</td>
+                                <td class="${m.stats.balance === 0 ? 'paid-status' : 'unpaid-status'}">
+                                    UGX ${(m.stats.balance || 0).toLocaleString()}
+                                </td>
+                                <td>
+                                    ${m.stats.balance === 0 ? '✅ Settled' : (m.stats.balance || 0) > 0 ? '⚠️ Pending' : '✅ Overpaid'}
+                                </td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    `;
 }
-
 async function renderAdminPayments() {
     const payments = await getAllPayments();
     document.getElementById('pageContent').innerHTML = `<div class="card"><h2>All Payments <button class="btn-primary" onclick="openAddModal()"><i class="fas fa-plus"></i> Record Payment</button></h2>
-    <div style="overflow-x:auto"><table class="data-table"><thead><tr><th>Date</th><th>Member</th><th>Activity</th><th>Amount</th><th>Notes</th></tr></thead><tbody>
+    <div style="overflow-x:auto"><table class="data-table"><thead><tr><th>Date</th><th>Member</th><th>Activity</th><th>Amount</th><th>Notes</th><th>Action</th></tr></thead><tbody>
     ${payments.map(p => `<tr>
         <td>${new Date(p.payment_date).toLocaleDateString()}</td>
-        <td>${p.memberName}</td><td>${p.activityName}</td>
-        <td>UGX ${p.amount.toLocaleString()}</td><td>${p.notes || '-'}</td>
-    </tr>`).join('') || '<tr><td colspan="5">No payments recorded</td></tr>'}
-    </tbody>}</table></div></div>`;
+        <td><strong>${p.memberName}</strong></td>
+        <td>${p.activityName}</td>
+        <td style="color:#27ae60;font-weight:bold;">UGX ${p.amount.toLocaleString()}</td>
+        <td>${p.notes || '-'}</td>
+        <td><button class="btn-delete-payment" onclick="deletePayment(${p.id})"><i class="fas fa-trash-alt"></i> Delete</button></td>
+    </tr>`).join('') || '<tr><td colspan="6">No payments recorded</td</tr>'}
+    </tbody>}</div></div>`;
 }
 
 async function renderUserPayments() {
@@ -613,54 +797,161 @@ async function renderUserPayments() {
     document.getElementById('pageContent').innerHTML = `<div class="card"><h2>My Payment History</h2>
     <div style="overflow-x:auto"><table class="data-table"><thead><tr><th>Date</th><th>Activity</th><th>Amount</th><th>Notes</th></tr></thead><tbody>
     ${payments.map(p => `<tr>
-        <td>${new Date(p.payment_date).toLocaleDateString()}</td><td>${p.activityName}</td>
-        <td>UGX ${p.amount.toLocaleString()}</td><td>${p.notes || '-'}</td>
-    </tr>`).join('') || '<tr><td colspan="4">No payment history</td></tr>'}
-    </tbody>}</table></div></div>`;
+        <td>${new Date(p.payment_date).toLocaleDateString()}</td>
+        <td>${p.activityName}</td>
+        <td>UGX ${p.amount.toLocaleString()}</td>
+        <td>${p.notes || '-'}</td>
+    </tr>`).join('') || '<tr><td colspan="4">No payment history</td</tr>'}
+    </tbody>}</div></div>`;
 }
 
 async function renderContacts() {
     const members = await getFamilyMembers();
-    document.getElementById('pageContent').innerHTML = `<div class="card"><h2>Contacts</h2>
-    ${members.map(m => `<div class="contact-card"><div><span style="font-size:32px">${m.role === 'parent' ? '👨‍👩' : '🧒'}</span><br><strong>${m.name}</strong><br>${m.role}<br>📞 ${m.phone || 'No phone'}</div>
-    <div>${m.phone ? `<button class="whatsapp-btn" onclick="sendWhatsApp('${m.phone}', 'Hello from OBUNANGWE BULAIIRE!')">WhatsApp</button>
-    <button class="call-btn" onclick="makeCall('${m.phone}')">Call</button>
-    <button class="sms-btn" onclick="sendSMS('${m.phone}', 'Check your payment status')">SMS</button>` : 'No contact'}</div></div>`).join('')}</div>`;
+    
+    if (members.length === 0) {
+        document.getElementById('pageContent').innerHTML = `
+            <div class="card">
+                <h2><i class="fas fa-address-book"></i> Contacts</h2>
+                <div style="text-align: center; padding: 40px;">
+                    <i class="fas fa-users" style="font-size: 48px; color: var(--gray-400); margin-bottom: 16px; display: block;"></i>
+                    <p style="color: var(--gray-500);">No contacts yet. Add family members to see them here.</p>
+                    ${_currentRole === 'admin' ? '<button class="btn-primary" onclick="switchPage(\'members\')" style="margin-top: 16px;">Add Members →</button>' : ''}
+                </div>
+            </div>
+        `;
+        return;
+    }
+    
+    let contactsHtml = '<div class="card"><h2><i class="fas fa-address-book"></i> Contacts</h2>';
+    
+    for (const m of members) {
+        const avatarIcon = m.role === 'parent' ? '👨‍👩' : '🧒';
+        const roleName = m.role === 'parent' ? 'Parent' : 'Child';
+        
+        contactsHtml += `
+            <div class="contact-card">
+                <div class="contact-info">
+                    <div class="contact-avatar">
+                        ${avatarIcon}
+                    </div>
+                    <div class="contact-details">
+                        <div class="contact-name">
+                            ${m.name}
+                            <span class="contact-role">${roleName}</span>
+                            ${m.id === _currentUser?.id ? '<span style="background: var(--success); padding: 2px 8px; border-radius: 40px; font-size: 10px;">You</span>' : ''}
+                        </div>
+                        <div class="contact-phone">
+                            <i class="fas fa-phone-alt"></i>
+                            ${m.phone || 'No phone number provided'}
+                        </div>
+                        ${m.email ? `<div class="contact-phone" style="margin-top: 4px;">
+                            <i class="fas fa-envelope"></i>
+                            ${m.email}
+                        </div>` : ''}
+                    </div>
+                </div>
+                <div class="contact-actions">
+                    ${m.phone ? `
+                        <button class="contact-whatsapp" onclick="sendWhatsApp('${m.phone}', 'Hello ${m.name} from OBUNANGWE BULAIIRE! Check your payment status.')">
+                            <span class="whatsapp-icon">📱</span> WhatsApp
+                        </button>
+                        <button class="contact-call" onclick="makeCall('${m.phone}')">
+                            <i class="fas fa-phone"></i> Call
+                        </button>
+                        <button class="contact-sms" onclick="sendSMS('${m.phone}', 'Check your payment status on OBUNANGWE BULAIIRE')">
+                            <i class="fas fa-comment"></i> SMS
+                        </button>
+                    ` : `
+                        <div class="contact-no-phone">
+                            <i class="fas fa-exclamation-circle"></i> No Contact Info
+                        </div>
+                    `}
+                </div>
+            </div>
+        `;
+    }
+    
+    contactsHtml += '</div>';
+    document.getElementById('pageContent').innerHTML = contactsHtml;
 }
 
 async function renderAdminReports() {
     const stats = await getStatistics();
     const members = await getFamilyMembers();
+    
+    // Build member stats array properly
+    const memberStats = [];
+    for (const m of members) {
+        const s = await getUserStatistics(m.id);
+        memberStats.push({ ...m, stats: s });
+    }
+    
     document.getElementById('pageContent').innerHTML = `
-        <div class="stats-grid"><div class="stat-card"><div class="stat-number">${members.length}</div><h3>Members</h3></div>
-        <div class="stat-card"><div class="stat-number">${_activities.length}</div><h3>Activities</h3></div>
-        <div class="stat-card"><div class="stat-number">${stats.totalOwed > 0 ? ((stats.totalCollected / stats.totalOwed * 100)).toFixed(1) : 0}%</div><h3>Overall Progress</h3></div></div>
-        <div class="card"><h2>Member Summary <button class="btn-whatsapp" onclick="generateShareableReport()"><i class="fab fa-whatsapp"></i> Share Full Report</button></h2>
-        <div style="overflow-x:auto"><table class="data-table"><thead><tr><th>Member</th><th>Role</th><th>Owed</th><th>Paid</th><th>Balance</th><th>Status</th><th>Action</th></tr></thead><tbody>
-        ${await Promise.all(members.map(async m => {
-            const s = await getUserStatistics(m.id);
-            return `<tr><td><strong>${m.name}</strong></td><td>${m.role === 'parent' ? 'Parent' : 'Child'}</td>
-                <td>UGX ${s.totalOwed.toLocaleString()}</td><td>UGX ${s.totalPaid.toLocaleString()}</td>
-                <td class="${s.balance === 0 ? 'paid-status' : 'unpaid-status'}">UGX ${s.balance.toLocaleString()}</td>
-                <td>${s.balance === 0 ? '✅ Settled' : s.balance > 0 ? '❌ Pending' : '✅ Overpaid'}</td>
-                <td>${m.phone && s.balance > 0 ? `<button class="sms-btn" onclick="sendSMS('${m.phone}', 'Reminder: Pending UGX ${s.balance.toLocaleString()}')">Remind</button>` : '-'}</td>
-            </tr>`;
-        }))}
-        </tbody>}</table></div></div>
-        <div class="card"><h2>Activity Summary</h2><div style="overflow-x:auto"><table class="data-table"><thead><tr><th>Activity</th><th>Budget</th><th>Collected</th><th>Pending</th><th>Progress</th><th>Status</th></tr></thead><tbody>
-        ${_activities.map(a => {
-            const collected = a.memberPayments?.reduce((sum, mp) => sum + (mp.amount_paid || 0), 0) || 0;
-            const pending = a.totalBudget - collected;
-            const progress = a.totalBudget > 0 ? (collected / a.totalBudget * 100).toFixed(1) : 0;
-            return `<tr><td>${a.name}</td><td>UGX ${a.totalBudget.toLocaleString()}</td>
-                <td>UGX ${collected.toLocaleString()}</td><td>UGX ${pending.toLocaleString()}</td>
-                <td><div class="progress-bar-container"><div class="progress-bar" style="width:${progress}%">${progress}%</div></div></td>
-                <td><span class="badge badge-${a.status}">${a.status}</span></td>
-            </tr>`;
-        }).join('')}
-        </tbody>}</table></div></div>`;
+        <div class="stats-grid">
+            <div class="stat-card"><div class="stat-number">${members.length}</div><h3>Members</h3></div>
+            <div class="stat-card"><div class="stat-number">${_activities.length}</div><h3>Activities</h3></div>
+            <div class="stat-card"><div class="stat-number">${stats.totalOwed > 0 ? ((stats.totalCollected / stats.totalOwed * 100)).toFixed(1) : 0}%</div><h3>Overall Progress</h3></div>
+        </div>
+        
+        <div class="card">
+            <h2>Member Summary 
+                <button class="btn-whatsapp" onclick="generateShareableReport()">
+                    <i class="fab fa-whatsapp"></i> Share Full Report
+                </button>
+            </h2>
+            <div style="overflow-x:auto">
+                <table class="data-table">
+                    <thead>
+                        <tr><th>Member</th><th>Role</th><th>Owed</th><th>Paid</th><th>Balance</th><th>Status</th><th>Action</th></tr>
+                    </thead>
+                    <tbody>
+                        ${memberStats.map(m => `
+                            <tr>
+                                <td><strong>${m.name}</strong></td>
+                                <td>${m.role === 'parent' ? 'Parent' : 'Child'}</td>
+                                <td>UGX ${(m.stats.totalOwed || 0).toLocaleString()}</td>
+                                <td>UGX ${(m.stats.totalPaid || 0).toLocaleString()}</td>
+                                <td class="${m.stats.balance === 0 ? 'paid-status' : 'unpaid-status'}">
+                                    UGX ${(m.stats.balance || 0).toLocaleString()}
+                                </div></td>
+                                <td>${m.stats.balance === 0 ? '✅ Settled' : (m.stats.balance || 0) > 0 ? '❌ Pending' : '✅ Overpaid'}</div></td>
+                                <td>${m.phone && (m.stats.balance || 0) > 0 ? `<button class="sms-btn" onclick="sendSMS('${m.phone}', 'Reminder: Pending UGX ${(m.stats.balance || 0).toLocaleString()}')">Remind</button>` : '-'}</div></td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        
+        <div class="card">
+            <h2>Activity Summary</h2>
+            <div style="overflow-x:auto">
+                <table class="data-table">
+                    <thead>
+                        <tr><th>Activity</th><th>Budget</th><th>Collected</th><th>Pending</th><th>Progress</th><th>Status</th></tr>
+                    </thead>
+                    <tbody>
+                        ${_activities.map(a => {
+                            const collected = a.memberPayments?.reduce((sum, mp) => sum + (mp.amount_paid || 0), 0) || 0;
+                            const pending = (a.totalBudget || 0) - collected;
+                            const progress = a.totalBudget > 0 ? (collected / a.totalBudget * 100).toFixed(1) : 0;
+                            return `
+                                <tr>
+                                    <td>${a.name}</div>
+                                    <td>UGX ${(a.totalBudget || 0).toLocaleString()}</div>
+                                    <td>UGX ${collected.toLocaleString()}</div>
+                                    <td>UGX ${pending.toLocaleString()}</div>
+                                    <td><div class="progress-bar-container"><div class="progress-bar" style="width:${progress}%">${progress}%</div></div></div>
+                                    <td><span class="badge badge-${a.status}">${a.status}</span></div>
+                                </tr>
+                            `;
+                        }).join('')}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    `;
 }
-
 async function renderUserReports() {
     const userStats = await getUserStatistics(_currentUser.id);
     const userActivities = await getMemberActivities(_currentUser.id);
@@ -693,7 +984,8 @@ async function renderSecurity() {
         <div style="overflow-x:auto"><table class="data-table"><tr><td><strong>Version</strong></td><td>3.0.0</td></tr>
         <tr><td><strong>Database</strong></td><td>Supabase</td></tr>
         <tr><td><strong>Activities</strong></td><td>${_activities.length}</td></tr>
-        <tr><td><strong>Members</strong></td><td>${_familyMembers.length}</td></tr></table></div></div>`;
+        <tr><td><strong>Members</strong></td><td>${_familyMembers.length}</td></tr>
+        </table></div></div>`;
 }
 
 async function renderCurrentPage() {
@@ -799,8 +1091,10 @@ function getPageIcon(page) {
 }
 
 function toggleSidebar() {
-    document.getElementById('sidebar').classList.toggle('collapsed');
-    document.querySelector('.main-content').classList.toggle('expanded');
+    // This function is overridden by the mobile sidebar
+    if (typeof toggleMobileSidebar === 'function') {
+        toggleMobileSidebar();
+    }
 }
 
 // ============================================
@@ -911,6 +1205,110 @@ async function registerServiceWorker() {
 }
 
 // ============================================
+// NOTIFICATION SYSTEM
+// ============================================
+let notifications = [];
+let notificationIdCounter = 0;
+
+function loadNotifications() {
+    const saved = localStorage.getItem('obunangwe_notifications');
+    if (saved) {
+        notifications = JSON.parse(saved);
+        notificationIdCounter = notifications.length > 0 ? Math.max(...notifications.map(n => n.id)) + 1 : 0;
+        updateNotificationBadge();
+    }
+}
+
+function saveNotifications() {
+    localStorage.setItem('obunangwe_notifications', JSON.stringify(notifications));
+    updateNotificationBadge();
+}
+
+function updateNotificationBadge() {
+    const unreadCount = notifications.filter(n => !n.read).length;
+    const badge = document.getElementById('notificationCount');
+    const bell = document.getElementById('notificationBell');
+    
+    if (badge) {
+        badge.textContent = unreadCount;
+        badge.style.display = unreadCount > 0 ? 'flex' : 'none';
+    }
+    
+    if (bell) {
+        bell.style.display = _currentRole ? 'flex' : 'none';
+    }
+}
+
+function addNotification(title, message, type = 'info', relatedId = null) {
+    const notification = {
+        id: notificationIdCounter++,
+        title: title,
+        message: message,
+        type: type,
+        timestamp: new Date().toISOString(),
+        read: false,
+        relatedId: relatedId
+    };
+    
+    notifications.unshift(notification);
+    if (notifications.length > 50) notifications.pop();
+    saveNotifications();
+    return notification;
+}
+
+function openNotificationCenter() {
+    renderNotificationsList();
+    document.getElementById('notificationModal').style.display = 'flex';
+}
+
+function renderNotificationsList() {
+    const container = document.getElementById('notificationsList');
+    if (!container) return;
+    
+    if (notifications.length === 0) {
+        container.innerHTML = '<p style="text-align: center; color: #999;">No notifications</p>';
+        return;
+    }
+    
+    container.innerHTML = notifications.map(notif => {
+        let icon = 'fa-info-circle';
+        if (notif.type === 'success') icon = 'fa-check-circle';
+        if (notif.type === 'warning') icon = 'fa-exclamation-triangle';
+        if (notif.type === 'error') icon = 'fa-times-circle';
+        
+        return `
+            <div class="notification-item ${notif.read ? '' : 'unread'}" onclick="markNotificationRead(${notif.id})">
+                <div class="notification-icon ${notif.type}">
+                    <i class="fas ${icon}"></i>
+                </div>
+                <div class="notification-content">
+                    <div class="notification-title">${notif.title}</div>
+                    <div class="notification-message">${notif.message}</div>
+                    <div class="notification-date">${new Date(notif.timestamp).toLocaleString()}</div>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+function markNotificationRead(id) {
+    const notif = notifications.find(n => n.id === id);
+    if (notif) {
+        notif.read = true;
+        saveNotifications();
+        renderNotificationsList();
+    }
+}
+
+function markAllNotificationsRead() {
+    notifications.forEach(n => n.read = true);
+    saveNotifications();
+    renderNotificationsList();
+}
+
+loadNotifications();
+
+// ============================================
 // EVENT LISTENERS
 // ============================================
 document.getElementById('addActivityForm')?.addEventListener('submit', async (e) => {
@@ -955,375 +1353,6 @@ document.getElementById('editActivityForm')?.addEventListener('submit', async (e
         await renderCurrentPage();
     }
 });
-// ============================================
-// POPUP NOTIFICATION SYSTEM
-// ============================================
-let notifications = [];
-let notificationIdCounter = 0;
-
-// Load saved notifications from localStorage
-function loadNotifications() {
-    const saved = localStorage.getItem('obunangwe_notifications');
-    if (saved) {
-        notifications = JSON.parse(saved);
-        notificationIdCounter = notifications.length > 0 ? Math.max(...notifications.map(n => n.id)) + 1 : 0;
-        updateNotificationBadge();
-    }
-}
-
-// Save notifications to localStorage
-function saveNotifications() {
-    localStorage.setItem('obunangwe_notifications', JSON.stringify(notifications));
-    updateNotificationBadge();
-}
-
-// Update bell badge count
-function updateNotificationBadge() {
-    const unreadCount = notifications.filter(n => !n.read).length;
-    const badge = document.getElementById('notificationCount');
-    const bell = document.getElementById('notificationBell');
-    
-    if (badge) {
-        badge.textContent = unreadCount;
-        badge.style.display = unreadCount > 0 ? 'flex' : 'none';
-    }
-    
-    if (bell) {
-        bell.style.display = _currentRole ? 'flex' : 'none';
-    }
-}
-
-// Show popup notification on screen
-function showPopupNotification(title, message, type = 'info', duration = 6000) {
-    // Create popup element
-    const popup = document.createElement('div');
-    popup.className = `notification-popup ${type}`;
-    popup.setAttribute('role', 'alert');
-    
-    // Get icon based on type
-    let icon = 'fa-info-circle';
-    if (type === 'success') icon = 'fa-check-circle';
-    if (type === 'warning') icon = 'fa-exclamation-triangle';
-    if (type === 'error') icon = 'fa-times-circle';
-    
-    popup.innerHTML = `
-        <div class="notification-header">
-            <i class="fas ${icon}"></i>
-            <h4>${title}</h4>
-            <button class="notification-close" onclick="this.closest('.notification-popup').remove()">×</button>
-        </div>
-        <div class="notification-body">
-            <p>${message}</p>
-            <small class="notification-time">${new Date().toLocaleTimeString()}</small>
-        </div>
-    `;
-    
-    // Click to open notification center
-    popup.addEventListener('click', (e) => {
-        if (!e.target.classList.contains('notification-close')) {
-            openNotificationCenter();
-        }
-    });
-    
-    document.body.appendChild(popup);
-    
-    // Auto remove after duration
-    const timeout = setTimeout(() => {
-        if (popup.parentElement) {
-            popup.style.animation = 'slideOutUp 0.3s ease';
-            setTimeout(() => popup.remove(), 300);
-        }
-    }, duration);
-    
-    popup._timeout = timeout;
-    
-    // Vibrate on mobile
-    if (window.navigator && window.navigator.vibrate) {
-        window.navigator.vibrate(200);
-    }
-    
-    return popup;
-}
-
-// Add notification to history
-function addNotification(title, message, type = 'info', relatedId = null) {
-    const notification = {
-        id: notificationIdCounter++,
-        title: title,
-        message: message,
-        type: type,
-        timestamp: new Date().toISOString(),
-        read: false,
-        relatedId: relatedId
-    };
-    
-    notifications.unshift(notification); // Add to beginning
-    if (notifications.length > 50) notifications.pop(); // Keep only last 50
-    
-    saveNotifications();
-    showPopupNotification(title, message, type);
-    
-    return notification;
-}
-
-// Open notification center
-function openNotificationCenter() {
-    renderNotificationsList();
-    document.getElementById('notificationModal').style.display = 'flex';
-}
-
-// Render notifications list
-function renderNotificationsList() {
-    const container = document.getElementById('notificationsList');
-    if (!container) return;
-    
-    if (notifications.length === 0) {
-        container.innerHTML = '<p style="text-align: center; color: #999;">No notifications</p>';
-        return;
-    }
-    
-    container.innerHTML = notifications.map(notif => {
-        let icon = 'fa-info-circle';
-        if (notif.type === 'success') icon = 'fa-check-circle';
-        if (notif.type === 'warning') icon = 'fa-exclamation-triangle';
-        if (notif.type === 'error') icon = 'fa-times-circle';
-        
-        return `
-            <div class="notification-item ${notif.read ? '' : 'unread'}" onclick="markNotificationRead(${notif.id})">
-                <div class="notification-icon ${notif.type}">
-                    <i class="fas ${icon}"></i>
-                </div>
-                <div class="notification-content">
-                    <div class="notification-title">${notif.title}</div>
-                    <div class="notification-message">${notif.message}</div>
-                    <div class="notification-date">${new Date(notif.timestamp).toLocaleString()}</div>
-                </div>
-            </div>
-        `;
-    }).join('');
-}
-
-// Mark single notification as read
-function markNotificationRead(id) {
-    const notif = notifications.find(n => n.id === id);
-    if (notif) {
-        notif.read = true;
-        saveNotifications();
-        renderNotificationsList();
-    }
-}
-
-// Mark all as read
-function markAllNotificationsRead() {
-    notifications.forEach(n => n.read = true);
-    saveNotifications();
-    renderNotificationsList();
-}
-
-// ============================================
-// TRIGGER NOTIFICATIONS FOR EVENTS
-// ============================================
-
-// Enhanced createActivity with popup notification
-async function createActivity(name, desc, budget, dueDate) {
-    if (_currentRole !== 'admin') { 
-        Swal.fire('Access Denied', 'Only administrators can create activities', 'error'); 
-        return false; 
-    }
-    
-    const members = await getFamilyMembers();
-    if (members.length === 0) {
-        Swal.fire('Error', 'No family members found. Please add members first.', 'error');
-        return false;
-    }
-    
-    const { data: activity, error } = await _supabase
-        .from('activities')
-        .insert({ name, description: desc, total_budget: parseFloat(budget), expected_completion_date: dueDate, status: 'active' })
-        .select();
-    
-    if (error) { Swal.fire('Error', error.message, 'error'); return false; }
-    
-    const activityId = activity[0].id;
-    const amountPerPerson = parseFloat(budget) / members.length;
-    
-    for (const member of members) {
-        await _supabase.from('member_activities').insert({
-            activity_id: activityId, member_id: member.id, amount_owed: amountPerPerson, amount_paid: 0, status: 'unpaid'
-        });
-        
-        // Send notification to each member
-        if (_currentRole === 'admin' && member.id !== 0) {
-            addNotification(
-                '📢 New Activity Created',
-                `"${name}" - Your share: UGX ${amountPerPerson.toLocaleString()}`,
-                'info',
-                activityId
-            );
-        }
-    }
-    
-    await loadData();
-    
-    // Admin notification
-    addNotification(
-        '✅ Activity Created',
-        `"${name}" assigned to ${members.length} members. Each owes UGX ${amountPerPerson.toLocaleString()}`,
-        'success',
-        activityId
-    );
-    
-    Swal.fire('Success!', `Activity "${name}" created successfully.`, 'success');
-    return true;
-}
-
-// Enhanced recordPayment with popup notification
-async function recordPayment(activityId, memberId, amount, date, notes) {
-    if (_currentRole !== 'admin') { 
-        Swal.fire('Access Denied', 'Only administrators can record payments', 'error'); 
-        return false; 
-    }
-    
-    const member = _familyMembers.find(m => m.id === memberId);
-    const activity = _activities.find(a => a.id === activityId);
-    
-    await _supabase.from('payments').insert({
-        activity_id: activityId, member_id: memberId, amount: parseFloat(amount), payment_date: date, notes
-    });
-    
-    const { data: memberActivity } = await _supabase
-        .from('member_activities')
-        .select('*')
-        .eq('activity_id', activityId)
-        .eq('member_id', memberId)
-        .single();
-    
-    const newPaid = (memberActivity?.amount_paid || 0) + parseFloat(amount);
-    let status = 'unpaid';
-    if (newPaid >= memberActivity.amount_owed) status = 'paid';
-    else if (newPaid > 0) status = 'partial';
-    
-    await _supabase
-        .from('member_activities')
-        .update({ amount_paid: newPaid, status })
-        .eq('activity_id', activityId)
-        .eq('member_id', memberId);
-    
-    const { data: allMemberActivities } = await _supabase
-        .from('member_activities')
-        .select('status')
-        .eq('activity_id', activityId);
-    
-    const allPaid = allMemberActivities?.every(ma => ma.status === 'paid');
-    if (allPaid) {
-        await _supabase.from('activities').update({ status: 'completed' }).eq('id', activityId);
-        
-        // Notify all members when activity is completed
-        for (const m of _familyMembers) {
-            addNotification(
-                '🎉 Activity Completed!',
-                `"${activity?.name}" is now complete! Thank you for your contribution.`,
-                'success',
-                activityId
-            );
-        }
-    }
-    
-    // Payment notification
-    addNotification(
-        '💰 Payment Recorded',
-        `${member?.name} paid UGX ${parseFloat(amount).toLocaleString()} for "${activity?.name}". Remaining: UGX ${(memberActivity.amount_owed - newPaid).toLocaleString()}`,
-        'success',
-        activityId
-    );
-    
-    // Notify the member who paid
-    if (member && member.id !== 0) {
-        addNotification(
-            '✅ Payment Confirmed',
-            `Your payment of UGX ${parseFloat(amount).toLocaleString()} for "${activity?.name}" has been recorded.`,
-            'success',
-            activityId
-        );
-    }
-    
-    await loadData();
-    Swal.fire('Success!', 'Payment recorded successfully', 'success');
-    return true;
-}
-
-// Enhanced updateActivity with completion notification
-async function updateActivity(id, name, desc, budget, dueDate, status) {
-    if (_currentRole !== 'admin') { 
-        Swal.fire('Access Denied', 'Only administrators can edit activities', 'error'); 
-        return false; 
-    }
-    
-    const oldActivity = _activities.find(a => a.id === id);
-    const { error } = await _supabase
-        .from('activities')
-        .update({ name, description: desc, total_budget: parseFloat(budget), expected_completion_date: dueDate, status })
-        .eq('id', id);
-    
-    if (error) { Swal.fire('Error', error.message, 'error'); return false; }
-    
-    if (status === 'completed' && oldActivity?.status !== 'completed') {
-        // Notify all members
-        for (const member of _familyMembers) {
-            addNotification(
-                '🎉 Activity Completed! 🎉',
-                `"${name}" has been successfully completed! Thank you for your contribution.`,
-                'success',
-                id
-            );
-        }
-    }
-    
-    const members = await getFamilyMembers();
-    const newAmount = parseFloat(budget) / members.length;
-    await _supabase.from('member_activities').update({ amount_owed: newAmount }).eq('activity_id', id);
-    
-    await loadData();
-    await renderCurrentPage();
-    
-    addNotification(
-        '📝 Activity Updated',
-        `"${name}" has been updated. Status: ${status}`,
-        'info',
-        id
-    );
-    
-    Swal.fire('Updated!', 'Activity updated successfully', 'success');
-    return true;
-}
-
-// Load notifications on startup
-loadNotifications();
-
-// Show welcome notification after login
-function showWelcomeNotification() {
-    setTimeout(() => {
-        if (_currentRole === 'admin') {
-            addNotification(
-                '👋 Welcome Administrator!',
-                'You have full control over the system. Create activities, record payments, and share reports.',
-                'success'
-            );
-        } else if (_currentRole === 'user') {
-            addNotification(
-                `👋 Welcome ${_currentUser.name}!`,
-                'You can view your activities, payment status, and family members.',
-                'success'
-            );
-        }
-    }, 1500);
-}
-
-// Call this after successful login
-// Add to showAdminDashboard and showUserDashboard:
-// showWelcomeNotification();
-
-// Expose global functions
 
 // ============================================
 // OFFLINE SUPPORT & SYNC
@@ -1349,15 +1378,21 @@ function updateOnlineStatus() {
 // Show online/offline status
 function showOnlineStatus(message, type) {
     const statusBar = document.getElementById('onlineStatus');
-    if (statusBar) {
-        statusBar.textContent = message;
-        statusBar.className = `online-status ${type}`;
-        statusBar.style.display = 'block';
-        
-        setTimeout(() => {
-            statusBar.style.display = 'none';
-        }, 3000);
+    if (!statusBar) {
+        // Create status bar if not exists
+        const bar = document.createElement('div');
+        bar.id = 'onlineStatus';
+        bar.className = 'online-status';
+        document.body.appendChild(bar);
     }
+    const bar = document.getElementById('onlineStatus');
+    bar.textContent = message;
+    bar.className = `online-status ${type}`;
+    bar.style.display = 'block';
+    
+    setTimeout(() => {
+        bar.style.display = 'none';
+    }, 3000);
 }
 
 // Save operation for offline sync
@@ -1412,6 +1447,7 @@ async function syncPendingOperations() {
 
 // Enhanced recordPayment with offline support
 async function recordPayment(activityId, memberId, amount, date, notes) {
+    // Check if offline
     if (!isOnline) {
         // Save for offline sync
         saveOfflineOperation('payment', {
@@ -1431,7 +1467,7 @@ async function recordPayment(activityId, memberId, amount, date, notes) {
         return true;
     }
     
-    // Original online code continues here...
+    // Online - normal flow
     if (_currentRole !== 'admin') { 
         Swal.fire('Access Denied', 'Only administrators can record payments', 'error'); 
         return false; 
@@ -1499,55 +1535,6 @@ async function recordPayment(activityId, memberId, amount, date, notes) {
     return true;
 }
 
-// Add online/offline event listeners
-window.addEventListener('online', updateOnlineStatus);
-window.addEventListener('offline', updateOnlineStatus);
-
-// Show offline banner when offline
-function showOfflineBanner() {
-    if (!isOnline) {
-        const banner = document.createElement('div');
-        banner.id = 'offlineBanner';
-        banner.innerHTML = `
-            <div style="background: #f39c12; color: white; text-align: center; padding: 8px; font-size: 12px; position: fixed; bottom: 0; left: 0; right: 0; z-index: 10000;">
-                <i class="fas fa-wifi-slash"></i> You are offline. Changes will be saved and synced when online.
-            </div>
-        `;
-        document.body.appendChild(banner);
-    } else {
-        const banner = document.getElementById('offlineBanner');
-        if (banner) banner.remove();
-    }
-}
-
-// Register Service Worker
-async function registerServiceWorker() {
-    if ('serviceWorker' in navigator) {
-        try {
-            const registration = await navigator.serviceWorker.register('/sw.js');
-            console.log('Service Worker registered successfully:', registration);
-            
-            // Request notification permission
-            if ('Notification' in window && Notification.permission !== 'granted') {
-                const permission = await Notification.requestPermission();
-                if (permission === 'granted') {
-                    console.log('Notification permission granted');
-                }
-            }
-            
-            // Background sync
-            if ('sync' in registration) {
-                registration.sync.register('sync-payments');
-                console.log('Background sync registered');
-            }
-            
-            return registration;
-        } catch (error) {
-            console.error('Service Worker registration failed:', error);
-        }
-    }
-}
-
 // Cache data for offline use
 async function cacheOfflineData() {
     if (!isOnline) return;
@@ -1600,14 +1587,38 @@ async function loadCachedData() {
 // Initialize offline support
 function initOfflineSupport() {
     updateOnlineStatus();
+    
+    // Show offline banner when offline
+    function showOfflineBanner() {
+        let banner = document.getElementById('offlineBanner');
+        if (!isOnline) {
+            if (!banner) {
+                banner = document.createElement('div');
+                banner.id = 'offlineBanner';
+                banner.innerHTML = `
+                    <div style="background: #f39c12; color: white; text-align: center; padding: 8px; font-size: 12px; position: fixed; bottom: 0; left: 0; right: 0; z-index: 10000;">
+                        <i class="fas fa-wifi-slash"></i> You are offline. Changes will be saved and synced when online.
+                    </div>
+                `;
+                document.body.appendChild(banner);
+            }
+        } else {
+            if (banner) banner.remove();
+        }
+    }
+    
     showOfflineBanner();
-    registerServiceWorker();
+    
+    // Register service worker (already registered in HTML)
     
     // Periodically check online status
     setInterval(() => {
         if (isOnline !== navigator.onLine) {
             updateOnlineStatus();
             showOfflineBanner();
+            if (isOnline) {
+                loadCachedData();
+            }
         }
     }, 3000);
     
@@ -1618,6 +1629,28 @@ function initOfflineSupport() {
         }
     }, 300000);
 }
+
+// Add event listeners for online/offline
+window.addEventListener('online', () => {
+    isOnline = true;
+    updateOnlineStatus();
+    syncPendingOperations();
+    loadData();
+});
+
+window.addEventListener('offline', () => {
+    isOnline = false;
+    updateOnlineStatus();
+    showOnlineStatus('You are offline. Changes will be saved.', 'warning');
+});
+
+// Call this after login
+function startOfflineSupport() {
+    initOfflineSupport();
+    loadCachedData();
+}
+
+// Expose global functions
 window.selectRole = selectRole;
 window.confirmLogin = confirmLogin;
 window.logout = logout;
@@ -1629,6 +1662,7 @@ window.openEditActivity = openEditActivity;
 window.openEditMember = openEditMember;
 window.deleteActivity = deleteActivity;
 window.deleteMember = deleteMember;
+window.deletePayment = deletePayment;
 window.sendWhatsApp = sendWhatsApp;
 window.makeCall = makeCall;
 window.sendSMS = sendSMS;
@@ -1637,3 +1671,5 @@ window.sendWhatsAppToAll = sendWhatsAppToAll;
 window.changePassword = changePassword;
 window.showActivityDetails = showActivityDetails;
 window.closeToast = closeToast;
+window.openNotificationCenter = openNotificationCenter;
+window.markAllNotificationsRead = markAllNotificationsRead;

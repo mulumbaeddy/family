@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Offline - OBUNANGWE BULAIIRE</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #01605a 0%, #ff862d 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        .offline-container {
+            background: white;
+            border-radius: 30px;
+            padding: 40px;
+            text-align: center;
+            max-width: 400px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            animation: fadeIn 0.5s ease;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .offline-icon {
+            font-size: 80px;
+            margin-bottom: 20px;
+        }
+        h1 {
+            color: #01605a;
+            margin-bottom: 15px;
+        }
+        p {
+            color: #666;
+            margin-bottom: 20px;
+            line-height: 1.6;
+        }
+        .retry-btn {
+            background: linear-gradient(135deg, #ff862d, #01605a);
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            border-radius: 25px;
+            font-size: 16px;
+            cursor: pointer;
+            margin-top: 20px;
+            transition: transform 0.3s;
+        }
+        .retry-btn:active {
+            transform: scale(0.95);
+        }
+        .cached-data {
+            margin-top: 20px;
+            padding: 15px;
+            background: #f5f5f5;
+            border-radius: 15px;
+            text-align: left;
+        }
+        .cached-data h3 {
+            font-size: 14px;
+            color: #01605a;
+            margin-bottom: 10px;
+        }
+        .cached-data p {
+            font-size: 12px;
+            margin-bottom: 5px;
+        }
+        .status {
+            margin-top: 20px;
+            font-size: 12px;
+            color: #999;
+        }
+    </style>
+</head>
+<body>
+    <div class="offline-container">
+        <div class="offline-icon">📡</div>
+        <h1>You're Offline</h1>
+        <p>No internet connection detected.<br>Please check your network and try again.</p>
+        <button class="retry-btn" onclick="location.reload()">
+            <i class="fas fa-sync-alt"></i> Try Again
+        </button>
+        <div class="cached-data" id="cachedInfo">
+            <h3>📦 Available Offline Data:</h3>
+            <p id="cachedStatus">Checking cached data...</p>
+        </div>
+        <div class="status">
+            <small>OBUNANGWE BULAIIRE will sync automatically when you're back online.</small>
+        </div>
+    </div>
+    <script>
+        if ('caches' in window) {
+            caches.keys().then(cacheNames => {
+                const cachedDiv = document.getElementById('cachedStatus');
+                if (cacheNames.length > 0) {
+                    cachedDiv.innerHTML = '✓ App shell cached<br>✓ Previous activities available<br>✓ Will sync when online';
+                    cachedDiv.style.color = '#27ae60';
+                } else {
+                    cachedDiv.innerHTML = 'First time loading. Connect to internet to cache data.';
+                }
+            });
+        }
+        window.addEventListener('online', () => {
+            location.reload();
+        });
+    </script>
+</body>
+</html>

@@ -1,13 +1,12 @@
-const CACHE_NAME = 'obunangwe-v2';
-const DYNAMIC_CACHE = 'obunangwe-dynamic-v2';
+const CACHE_NAME = 'obunangwe-v3';
+const DYNAMIC_CACHE = 'obunangwe-dynamic-v3';
 
-// Files to cache for offline
+// Files to cache for offline access
 const STATIC_ASSETS = [
     '/',
     '/index.html',
     '/style.css',
     '/script.js',
-    '/notifications.js',
     '/manifest.json',
     '/offline.html',
     'https://cdn.jsdelivr.net/npm/sweetalert2@11',
@@ -45,7 +44,7 @@ self.addEventListener('activate', event => {
     );
 });
 
-// Fetch event - serve from cache, then network
+// Fetch event - serve from cache first, then network
 self.addEventListener('fetch', event => {
     // Skip non-GET requests
     if (event.request.method !== 'GET') return;

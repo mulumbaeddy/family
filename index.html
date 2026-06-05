@@ -6,6 +6,7 @@
     <meta name="theme-color" content="#01605a">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <meta name="apple-mobile-web-app-title" content="OBUNANGWE">
     <title>OBUNANGWE BULAIIRE - Family Payment Tracker</title>
     <link rel="stylesheet" href="style.css">
@@ -15,76 +16,115 @@
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
-
 <body>
     <div id="loadingScreen" class="loading-screen">
         <i class="fas fa-hand-holding-heart fa-pulse" style="font-size: 64px; margin-bottom: 20px;"></i>
-        <h2>OBUNANGWE BULAIIRE</h2>
-        <p id="loadingStatus">Connecting to Supabase...</p>
+        <h2>BULUMBA BULAIIRE</h2>
+        <p id="loadingStatus">Connecting...</p>
     </div>
 
     <div id="loginScreen" class="login-container" style="display: none;">
-    <i class="fas fa-hand-holding-heart" style="font-size: 48px; color: var(--primary-orange); margin-bottom: 20px;"></i>
-    <h2 style="color: var(--primary-teal);">OBUNANGWE BULAIIRE</h2>
-    <p style="color: #666; margin-bottom: 30px;">Family Payment Tracker</p>
-    
-    <div class="role-btn" onclick="selectRole('admin')" id="adminRoleBtn">
-        <div style="font-size: 20px; font-weight: bold;">👑 Administrator</div>
-        <div style="font-size: 12px; color: #666;">Full Control - Create, Edit, Delete, Share Reports</div>
-    </div>
-    
-    <div class="role-btn" onclick="selectRole('user')" id="userRoleBtn">
-        <div style="font-size: 20px; font-weight: bold;">👤 Family Member</div>
-        <div style="font-size: 12px; color: #666;">View Only - See Your Payments & Activity Totals</div>
+        <i class="fas fa-hand-holding-heart" style="font-size: 48px; color: var(--primary-orange); margin-bottom: 20px;"></i>
+        <h2 style="color: var(--primary-teal);">BULUMBA BULAIIRE</h2>
+        <p style="color: #666; margin-bottom: 30px;">Family Payment Tracker</p>
+        
+        <div class="role-btn" onclick="selectRole('admin')" id="adminRoleBtn">
+            <div style="font-size: 20px; font-weight: bold;">👑 Administrator</div>
+            <div style="font-size: 12px; color: #666;">Full Control - Create, Edit, Delete, Share Reports</div>
+        </div>
+        
+        <div class="role-btn" onclick="selectRole('user')" id="userRoleBtn">
+            <div style="font-size: 20px; font-weight: bold;">👤 Family Member</div>
+            <div style="font-size: 12px; color: #666;">View Only - See Your Payments & Activity Totals</div>
+        </div>
+
+        <div id="adminPasswordDiv" style="display: none; margin-top: 20px;">
+            <input type="password" id="adminPassword" placeholder="Enter admin password">
+        </div>
+
+        <div id="userSelectDiv" style="display: none; margin-top: 20px;">
+            <select id="userSelect">
+                <option value="">Select your name...</option>
+            </select>
+        </div>
+
+        <button class="login-btn" onclick="confirmLogin()">Login →</button>
+        
+        <div style="margin-top: 20px; font-size: 11px; color: #999;">
+            <p>👤 Family members: Select your name from dropdown</p>
+        </div>
     </div>
 
-    <div id="adminPasswordDiv" style="display: none; margin-top: 20px;">
-        <input type="password" id="adminPassword" placeholder="Enter admin password">
-    </div>
-
-    <div id="userSelectDiv" style="display: none; margin-top: 20px;">
-        <select id="userSelect">
-            <option value="">Select your name...</option>
-        </select>
-    </div>
-
-    <button class="login-btn" onclick="confirmLogin()">Login →</button>
-    
-    <!-- Password hint removed -->
-</div>
     <div id="appContainer" style="display: none;">
-        <div class="sidebar" id="sidebar">
+        <!-- Hamburger Menu Button -->
+        <button class="menu-btn" id="menuBtn" onclick="toggleMobileSidebar()">
+            <i class="fas fa-bars"></i>
+        </button>
+
+        <!-- Mobile Sidebar -->
+        <div class="mobile-sidebar" id="mobileSidebar">
             <div class="sidebar-header">
                 <div class="logo">
-                    <h2><i class="fas fa-hand-holding-heart"></i> <span class="sidebar-text">OBUNANGWE</span></h2>
-                    <p class="sidebar-text">BULAIIRE</p>
+                    <h2><i class="fas fa-hand-holding-heart"></i> OBUNANGWE</h2>
+                    <p>BULAIIRE</p>
                 </div>
-                <button class="toggle-btn" onclick="toggleSidebar()"><i class="fas fa-chevron-left"></i></button>
+                <button class="close-sidebar" onclick="toggleMobileSidebar()">
+                    <i class="fas fa-times"></i>
+                </button>
             </div>
             <div class="nav-menu">
-                <div class="nav-item" onclick="switchPage('dashboard')"><i class="fas fa-tachometer-alt"></i><span class="nav-label">Dashboard</span></div>
-                <div class="nav-item" onclick="switchPage('myactivities')" id="myActivitiesNav"><i class="fas fa-list"></i><span class="nav-label">My Activities</span></div>
-                <div class="nav-item" onclick="switchPage('activities')" id="activitiesNav"><i class="fas fa-tasks"></i><span class="nav-label">Activities</span></div>
-                <div class="nav-item" onclick="switchPage('members')" id="membersNav"><i class="fas fa-users"></i><span class="nav-label">Members</span></div>
-                <div class="nav-item" onclick="switchPage('payments')" id="paymentsNav"><i class="fas fa-money-bill-wave"></i><span class="nav-label">Payments</span></div>
-                <div class="nav-item" onclick="switchPage('contacts')"><i class="fas fa-address-book"></i><span class="nav-label">Contacts</span></div>
-                <div class="nav-item" onclick="switchPage('reports')" id="reportsNav"><i class="fas fa-chart-bar"></i><span class="nav-label">Reports</span></div>
-                <div class="nav-item" onclick="switchPage('security')" id="securityNav"><i class="fas fa-shield-alt"></i><span class="nav-label">Security</span></div>
+                <div class="nav-item" onclick="switchPage('dashboard'); toggleMobileSidebar()">
+                    <i class="fas fa-tachometer-alt"></i><span>Dashboard</span>
+                </div>
+                <div class="nav-item" onclick="switchPage('myactivities'); toggleMobileSidebar()" id="myActivitiesNav">
+                    <i class="fas fa-list"></i><span>My Activities</span>
+                </div>
+                <div class="nav-item" onclick="switchPage('activities'); toggleMobileSidebar()" id="activitiesNav">
+                    <i class="fas fa-tasks"></i><span>Activities</span>
+                </div>
+                <div class="nav-item" onclick="switchPage('members'); toggleMobileSidebar()" id="membersNav">
+                    <i class="fas fa-users"></i><span>Members</span>
+                </div>
+                <div class="nav-item" onclick="switchPage('payments'); toggleMobileSidebar()" id="paymentsNav">
+                    <i class="fas fa-money-bill-wave"></i><span>Payments</span>
+                </div>
+                <div class="nav-item" onclick="switchPage('contacts'); toggleMobileSidebar()">
+                    <i class="fas fa-address-book"></i><span>Contacts</span>
+                </div>
+                <div class="nav-item" onclick="switchPage('reports'); toggleMobileSidebar()" id="reportsNav">
+                    <i class="fas fa-chart-bar"></i><span>Reports</span>
+                </div>
+                <div class="nav-item" onclick="switchPage('security'); toggleMobileSidebar()" id="securityNav">
+                    <i class="fas fa-shield-alt"></i><span>Security</span>
+                </div>
             </div>
             <div class="user-info-sidebar">
-                <div class="nav-item"><i class="fas fa-user-circle"></i><span class="nav-label" id="sidebarUserName">Loading...</span></div>
-                <div class="nav-item" onclick="logout()"><i class="fas fa-sign-out-alt"></i><span class="nav-label">Logout</span></div>
+                <div class="nav-item">
+                    <i class="fas fa-user-circle"></i><span id="sidebarUserName">Loading...</span>
+                </div>
+                <div class="nav-item" onclick="logout(); toggleMobileSidebar()">
+                    <i class="fas fa-sign-out-alt"></i><span>Logout</span>
+                </div>
             </div>
         </div>
 
+        <!-- Overlay -->
+        <div class="sidebar-overlay" id="sidebarOverlay" onclick="toggleMobileSidebar()"></div>
+
+        <!-- Main Content -->
         <div class="main-content" id="mainContent">
             <div class="header">
-                <h1 class="page-title" id="pageTitle"><i class="fas fa-tachometer-alt"></i> Dashboard</h1>
+                <div></div>
                 <div class="user-info">
+                    <div class="notification-bell" onclick="openNotificationCenter()" id="notificationBell" style="display: none;">
+                        <i class="fas fa-bell"></i>
+                        <span class="notification-badge" id="notificationCount">0</span>
+                    </div>
                     <span class="user-badge" id="userNameDisplay"></span>
                     <span class="role-badge" id="roleBadge"></span>
                 </div>
             </div>
+            <h1 class="page-title" id="pageTitle"><i class="fas fa-tachometer-alt"></i> Dashboard</h1>
             <div id="viewOnlyBanner" class="view-only-banner" style="display: none;">
                 <i class="fas fa-eye"></i> View Only Mode - You can see all members and your payment status
             </div>
@@ -142,29 +182,57 @@
 
     <div id="toastContainer" class="toast-container"></div>
 
-    <!-- Notification Bell -->
-<div class="notification-bell" onclick="openNotificationCenter()" style="display: none;" id="notificationBell">
-    <i class="fas fa-bell"></i>
-    <span class="notification-badge" id="notificationCount">0</span>
-</div>
-
-<!-- Notification Center Modal -->
-<div id="notificationModal" class="modal">
-    <div class="modal-content notification-center">
-        <div class="modal-header">
-            <h3><i class="fas fa-bell"></i> Notifications</h3>
-            <button class="close-modal" onclick="closeModal('notificationModal')">&times;</button>
-        </div>
-        <div style="text-align: right; margin-bottom: 15px;">
-            <button class="mark-all-read" onclick="markAllNotificationsRead()">Mark all as read</button>
-        </div>
-        <div id="notificationsList">
-            <p style="text-align: center; color: #999;">No notifications</p>
+    <!-- Notification Center Modal -->
+    <div id="notificationModal" class="modal">
+        <div class="modal-content notification-center">
+            <div class="modal-header">
+                <h3><i class="fas fa-bell"></i> Notifications</h3>
+                <button class="close-modal" onclick="closeModal('notificationModal')">&times;</button>
+            </div>
+            <div style="text-align: right; margin-bottom: 15px;">
+                <button class="mark-all-read" onclick="markAllNotificationsRead()">Mark all as read</button>
+            </div>
+            <div id="notificationsList">
+                <p style="text-align: center; color: #999;">No notifications</p>
+            </div>
         </div>
     </div>
-</div>
-    
 
     <script src="script.js"></script>
+    
+    <script>
+        // Mobile Sidebar Toggle Function
+        function toggleMobileSidebar() {
+            const sidebar = document.getElementById('mobileSidebar');
+            const overlay = document.getElementById('sidebarOverlay');
+            
+            if (!sidebar) return;
+            
+            sidebar.classList.toggle('open');
+            overlay.classList.toggle('active');
+            
+            if (sidebar.classList.contains('open')) {
+                document.body.style.overflow = 'hidden';
+            } else {
+                document.body.style.overflow = '';
+            }
+        }
+        
+        window.toggleMobileSidebar = toggleMobileSidebar;
+        
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') {
+                const sidebar = document.getElementById('mobileSidebar');
+                const overlay = document.getElementById('sidebarOverlay');
+                if (sidebar && sidebar.classList.contains('open')) {
+                    sidebar.classList.remove('open');
+                    overlay.classList.remove('active');
+                    document.body.style.overflow = '';
+                }
+            }
+        });
+        
+        window.toggleSidebar = toggleMobileSidebar;
+    </script>
 </body>
 </html>

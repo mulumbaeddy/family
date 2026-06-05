@@ -1,7 +1,7 @@
 {
-  "name": "OBUNANGWE BULAIIRE",
+  "name": "BULUMBA BULAIIRE",
   "short_name": "FamilyPay",
-  "description": "Family Payment Tracker - Track contributions and payments",
+  "description": "Family Tracker",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#01605a",
