@@ -1143,12 +1143,22 @@ async function confirmLogin() {
     
     if (!storedPwd) {
         // Fallback to database
-        const { data: adminSetting } = await _supabase
-            .from('admin_settings')
-            .select('setting_value')
-            .eq('setting_key', 'admin_password')
-            .single();
-        storedPwd = adminSetting?.setting_value || 'admin123';
+        try {
+            const { data: adminSetting, error } = await _supabase
+                .from('admin_settings')
+                .select('setting_value')
+                .eq('setting_key', 'admin_password')
+                .single();
+            
+            if (!error && adminSetting) {
+                storedPwd = adminSetting.setting_value;
+            } else {
+                storedPwd = 'admin123'; // Default password
+            }
+        } catch (error) {
+            console.log('Database not available, using default password');
+            storedPwd = 'admin123';
+        }
     }
     
     if (_selectedRole === 'admin') {
@@ -1158,10 +1168,44 @@ async function confirmLogin() {
             _currentUser = { id: 0, name: 'Administrator' };
             showAdminDashboard();
         } else {
-            Swal.fire('Error', 'Invalid password!', 'error');
+            Swal.fire({
+                title: 'Error',
+                text: 'Invalid password!',
+                icon: 'error',
+                confirmButtonText: 'OK'
+            });
         }
     } else if (_selectedRole === 'user') {
-        // ... rest of user login code
+        const userId = parseInt(document.getElementById('userSelect').value);
+        if (!userId) {
+            Swal.fire({
+                title: 'Error',
+                text: 'Please select your name',
+                icon: 'error',
+                confirmButtonText: 'OK'
+            });
+            return;
+        }
+        const user = _familyMembers.find(m => m.id === userId);
+        if (user) {
+            _currentRole = 'user';
+            _currentUser = user;
+            showUserDashboard();
+        } else {
+            Swal.fire({
+                title: 'Error',
+                text: 'User not found',
+                icon: 'error',
+                confirmButtonText: 'OK'
+            });
+        }
+    } else {
+        Swal.fire({
+            title: 'Error',
+            text: 'Please select a role',
+            icon: 'error',
+            confirmButtonText: 'OK'
+        });
     }
 }
 
