@@ -95,60 +95,216 @@ function processToastQueue() {
 })();
 
 async function loadData() {
-    const { data: members } = await _supabase.from('family_members').select('*');
-    if (members) _familyMembers = members;
-    
-    const { data: acts } = await _supabase.from('activities').select('*');
-    if (acts) {
-        _activities = [];
-        for (const act of acts) {
-            const { data: memberActs } = await _supabase
-                .from('member_activities')
-                .select('*, family_members(*)')
-                .eq('activity_id', act.id);
-            _activities.push({
-                id: act.id,
-                name: act.name,
-                description: act.description,
-                totalBudget: act.total_budget,
-                expectedCompletionDate: act.expected_completion_date,
-                status: act.status,
-                memberPayments: memberActs || []
-            });
+    try {
+        console.log('🔄 Loading data...');
+        
+        const { data: members, error: membersError } = await _supabase
+            .from('family_members')
+            .select('*')
+            .order('name');
+        
+        if (membersError) throw membersError;
+        
+        // IMPORTANT: Map profile_picture_url correctly
+        _familyMembers = members.map(member => ({
+            ...member,
+            profile_picture_url: member.profile_picture_url || null,
+            phone: member.phone || '',
+            email: member.email || '',
+            location: member.location || '',
+            bio: member.bio || '',
+            occupation: member.occupation || ''
+        }));
+        
+        console.log(`✅ Loaded ${_familyMembers.length} members`);
+        
+        // Debug: Log profile pictures
+        _familyMembers.forEach(m => {
+            if (m.profile_picture_url) {
+                console.log(`📸 ${m.name} has picture: ${m.profile_picture_url.substring(0, 50)}...`);
+            } else {
+                console.log(`❌ ${m.name} has NO picture`);
+            }
+        });
+        
+        // Load activities and other data...
+        const { data: activities, error: activitiesError } = await _supabase
+            .from('activities')
+            .select('*')
+            .order('created_at', { ascending: false });
+        
+        if (activitiesError) throw activitiesError;
+        
+        _activities = activities || [];
+        
+        // Populate user dropdown
+        const userSelect = document.getElementById('userSelect');
+        if (userSelect && _familyMembers.length > 0) {
+            userSelect.innerHTML = `
+                <option value="">📋 Select your name...</option>
+                ${_familyMembers.map(m => `
+                    <option value="${m.id}">
+                        ${m.member_type === 'board' ? '👑 ' : ''}${m.name}
+                    </option>
+                `).join('')}
+            `;
         }
-    }
-    
-    const select = document.getElementById('userSelect');
-    if (select && _familyMembers.length) {
-        select.innerHTML = '<option value="">Select your name...</option>' + 
-            _familyMembers.map(m => `<option value="${m.id}">${m.name} (${m.member_type === 'board' ? 'Board Member' : (m.member_type === 'parent' ? 'Parent' : 'Child')})</option>`).join('');
+        
+        return true;
+        
+    } catch (error) {
+        console.error('❌ Error loading data:', error);
+        return false;
     }
 }
-
 // ============================================
 // IMAGE PREVIEW FUNCTIONS
 // ============================================
-function previewAddImage(input) {
+// REPLACE your old previewAddImage with this:
+// ============================================
+// COMPLETE WORKING PICTURE FUNCTIONS
+// ============================================
+
+// Preview and compress image for Add Member
+// Updated preview functions (same as before)
+async function previewAddImage(input) {
     if (input.files && input.files[0]) {
+        const file = input.files[0];
+        
+        // Show preview
         const reader = new FileReader();
         reader.onload = function(e) {
             const preview = document.getElementById('addImagePreview');
-            preview.innerHTML = `<img src="${e.target.result}" alt="Preview">`;
-            window._addImageBase64 = e.target.result;
+            preview.innerHTML = `<img src="${e.target.result}" alt="Preview" style="width: 100%; height: 100%; object-fit: cover; border-radius: 50%;">`;
         };
-        reader.readAsDataURL(input.files[0]);
+        reader.readAsDataURL(file);
+        
+        // Store the file
+        window._addImageFile = file;
     }
 }
 
-function previewEditImage(input) {
+async function previewEditImage(input) {
     if (input.files && input.files[0]) {
+        const file = input.files[0];
+        
+        // Show preview
         const reader = new FileReader();
         reader.onload = function(e) {
             const preview = document.getElementById('editImagePreview');
-            preview.innerHTML = `<img src="${e.target.result}" alt="Preview">`;
-            window._editImageBase64 = e.target.result;
+            preview.innerHTML = `<img src="${e.target.result}" alt="Preview" style="width: 100%; height: 100%; object-fit: cover; border-radius: 50%;">`;
         };
-        reader.readAsDataURL(input.files[0]);
+        reader.readAsDataURL(file);
+        
+        // Store the file
+        window._editImageFile = file;
+    }
+}
+// Compress image function
+async function compressImage(file, maxWidth = 200, maxHeight = 200, quality = 0.6) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        reader.onload = (e) => {
+            const img = new Image();
+            img.src = e.target.result;
+            img.onload = () => {
+                const canvas = document.createElement('canvas');
+                let width = img.width;
+                let height = img.height;
+                
+                if (width > height) {
+                    if (width > maxWidth) {
+                        height = (height * maxWidth) / width;
+                        width = maxWidth;
+                    }
+                } else {
+                    if (height > maxHeight) {
+                        width = (width * maxHeight) / height;
+                        height = maxHeight;
+                    }
+                }
+                
+                canvas.width = width;
+                canvas.height = height;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0, width, height);
+                
+                canvas.toBlob((blob) => {
+                    resolve(blob);
+                }, 'image/jpeg', quality);
+            };
+        };
+        reader.onerror = error => reject(error);
+    });
+}
+
+// Upload image to Supabase Storage
+// ============================================
+// UPDATED STORAGE FUNCTIONS WITH NEW BUCKET
+// ============================================
+
+// Upload image to new bucket
+async function uploadProfilePicture(file, memberId) {
+    try {
+        const fileExt = file.name.split('.').pop();
+        const fileName = `member_${memberId}_${Date.now()}.${fileExt}`;
+        
+        console.log('Uploading to family-photos bucket...');
+        
+        const { data, error } = await _supabase.storage
+            .from('family-photos')  // NEW BUCKET NAME
+            .upload(fileName, file, {
+                cacheControl: '3600',
+                upsert: true,
+                contentType: file.type
+            });
+        
+        if (error) {
+            console.error('Upload error:', error);
+            return null;
+        }
+        
+        // Get public URL
+        const { data: { publicUrl } } = _supabase.storage
+            .from('family-photos')  // NEW BUCKET NAME
+            .getPublicUrl(fileName);
+        
+        console.log('Upload successful! URL:', publicUrl);
+        
+        // Save URL to database
+        const { error: updateError } = await _supabase
+            .from('family_members')
+            .update({ profile_picture_url: publicUrl })
+            .eq('id', memberId);
+        
+        if (updateError) {
+            console.error('Failed to save URL:', updateError);
+            return null;
+        }
+        
+        return publicUrl;
+        
+    } catch (error) {
+        console.error('Upload error:', error);
+        return null;
+    }
+}
+
+// Delete old profile picture from new bucket
+async function deleteOldProfilePicture(oldUrl) {
+    if (!oldUrl) return;
+    
+    try {
+        const fileName = oldUrl.split('/').pop();
+        if (fileName && fileName.includes('member_')) {
+            await _supabase.storage
+                .from('family-photos')  // NEW BUCKET NAME
+                .remove([fileName]);
+            console.log('Old picture deleted:', fileName);
+        }
+    } catch (error) {
+        console.error('Delete error:', error);
     }
 }
 
@@ -179,36 +335,49 @@ async function getMemberActivities(memberId) {
 }
 
 async function getMemberPayments(memberId) {
-    let payments = [];
-    for (const a of _activities) {
-        const { data: payData } = await _supabase
-            .from('payments')
-            .select('*')
-            .eq('activity_id', a.id)
-            .eq('member_id', memberId);
-        if (payData) {
-            payData.forEach(p => { payments.push({ ...p, activityName: a.name }); });
-        }
+    const { data: payments, error } = await _supabase
+        .from('payments')
+        .select(`
+            *,
+            activities(name)
+        `)
+        .eq('member_id', memberId)
+        .order('payment_date', { ascending: false });
+    
+    if (error) {
+        console.error('Error fetching member payments:', error);
+        return [];
     }
-    return payments.sort((a, b) => new Date(b.payment_date) - new Date(a.payment_date));
+    
+    return payments.map(p => ({
+        ...p,
+        activityName: p.activities?.name || 'Unknown'
+    }));
 }
 
 async function getAllPayments() {
-    let payments = [];
-    for (const a of _activities) {
-        const { data: payData } = await _supabase
-            .from('payments')
-            .select('*, family_members(name)')
-            .eq('activity_id', a.id);
-        if (payData) {
-            payData.forEach(p => {
-                payments.push({ ...p, activityName: a.name, memberName: p.family_members?.name || 'Unknown' });
-            });
-        }
+    // Fetch payments with a single query instead of looping through activities
+    const { data: payments, error } = await _supabase
+        .from('payments')
+        .select(`
+            *,
+            family_members(name),
+            activities(name)
+        `)
+        .order('payment_date', { ascending: false });
+    
+    if (error) {
+        console.error('Error fetching payments:', error);
+        return [];
     }
-    return payments.sort((a, b) => new Date(b.payment_date) - new Date(a.payment_date));
+    
+    // Format the payments
+    return payments.map(p => ({
+        ...p,
+        memberName: p.family_members?.name || 'Unknown',
+        activityName: p.activities?.name || 'Unknown'
+    }));
 }
-
 async function getStatistics() {
     const activeActivities = _activities.filter(a => a.status === 'active').length;
     const completedActivities = _activities.filter(a => a.status === 'completed').length;
@@ -618,7 +787,7 @@ async function deleteActivity(id) {
     }
 }
 
-async function addMember(name, role, phone, email, profilePicture, dob, bloodGroup, allergies, 
+async function addMember(name, role, phone, email, profilePictureFile, dob, bloodGroup, allergies, 
     emergencyContact, occupation, location, maritalStatus, anniversary, bio, favoriteColor,
     memberType, boardPosition, parentId) {
     
@@ -627,20 +796,14 @@ async function addMember(name, role, phone, email, profilePicture, dob, bloodGro
         return false; 
     }
     
-    // Determine payment responsible
-    let paymentResponsibleId = null;
-    if (memberType === 'child' || memberType === 'dependent') {
-        paymentResponsibleId = parentId;
-    }
-    
+    // Insert member first without picture
     const { data: member, error } = await _supabase
         .from('family_members')
         .insert({ 
             name, 
             role: (memberType === 'board' || memberType === 'parent') ? 'parent' : 'child',
-            phone, 
-            email,
-            profile_picture: profilePicture || null,
+            phone: phone || null,
+            email: email || null,
             date_of_birth: dob || null,
             blood_group: bloodGroup || null,
             allergies: allergies || null,
@@ -653,22 +816,28 @@ async function addMember(name, role, phone, email, profilePicture, dob, bloodGro
             favorite_color: favoriteColor || '#01605a',
             member_type: memberType,
             parent_id: parentId || null,
-            payment_responsible_id: paymentResponsibleId,
+            payment_responsible_id: (memberType === 'child' || memberType === 'dependent') ? parentId : null,
             is_board_member: memberType === 'board',
             board_position: boardPosition || null,
             can_approve_payments: memberType === 'board'
         })
-        .select();
+        .select()
+        .single();
     
     if (error) { 
         Swal.fire('Error', error.message, 'error'); 
         return false; 
     }
     
-    // Recalculate all active activity shares
-    const activeActivities = _activities.filter(a => a.status === 'active');
-    for (const activity of activeActivities) {
-        await recalculateActivityShares(activity.id, activity.totalBudget);
+    // Upload profile picture if provided
+    if (profilePictureFile) {
+        const pictureUrl = await uploadProfilePicture(profilePictureFile, member.id);
+        if (pictureUrl) {
+            await _supabase
+                .from('family_members')
+                .update({ profile_picture_url: pictureUrl })
+                .eq('id', member.id);
+        }
     }
     
     await loadData();
@@ -676,22 +845,38 @@ async function addMember(name, role, phone, email, profilePicture, dob, bloodGro
     return true;
 }
 
-async function updateMember(id, name, role, phone, email, profilePicture, dob, bloodGroup, allergies, emergencyContact, occupation, location, maritalStatus, anniversary, bio, favoriteColor, memberType, boardPosition, parentId) {
+// Updated Update Member
+async function updateMember(id, name, role, phone, email, profilePictureFile, dob, bloodGroup, allergies, 
+    emergencyContact, occupation, location, maritalStatus, anniversary, bio, favoriteColor,
+    memberType, boardPosition, parentId) {
+    
     if (_currentRole !== 'admin') { 
         Swal.fire('Access Denied', 'Only administrators can edit members', 'error'); 
         return false; 
     }
     
-    let paymentResponsibleId = null;
-    if (memberType === 'child' || memberType === 'dependent') {
-        paymentResponsibleId = parentId;
+    // Get current member
+    const { data: currentMember } = await _supabase
+        .from('family_members')
+        .select('profile_picture_url')
+        .eq('id', id)
+        .single();
+    
+    let pictureUrl = currentMember?.profile_picture_url;
+    
+    // Upload new picture if provided
+    if (profilePictureFile) {
+        if (pictureUrl) {
+            await deleteOldProfilePicture(pictureUrl);
+        }
+        pictureUrl = await uploadProfilePicture(profilePictureFile, id);
     }
     
     const updateData = { 
         name, 
-        role: (memberType === 'board' || memberType === 'parent') ? 'parent' : 'child', 
-        phone, 
-        email,
+        role: (memberType === 'board' || memberType === 'parent') ? 'parent' : 'child',
+        phone: phone || null,
+        email: email || null,
         date_of_birth: dob || null,
         blood_group: bloodGroup || null,
         allergies: allergies || null,
@@ -704,13 +889,15 @@ async function updateMember(id, name, role, phone, email, profilePicture, dob, b
         favorite_color: favoriteColor || '#01605a',
         member_type: memberType,
         parent_id: parentId || null,
-        payment_responsible_id: paymentResponsibleId,
+        payment_responsible_id: (memberType === 'child' || memberType === 'dependent') ? parentId : null,
         is_board_member: memberType === 'board',
         board_position: boardPosition || null,
         can_approve_payments: memberType === 'board'
     };
     
-    if (profilePicture) updateData.profile_picture = profilePicture;
+    if (pictureUrl) {
+        updateData.profile_picture_url = pictureUrl;
+    }
     
     const { error } = await _supabase
         .from('family_members')
@@ -718,21 +905,12 @@ async function updateMember(id, name, role, phone, email, profilePicture, dob, b
         .eq('id', id);
     
     if (error) { 
-        Swal.fire('Error', error.message, 'error'); 
-        return false; 
-    }
-    
-    // Recalculate all active activity shares
-    const activeActivities = _activities.filter(a => a.status === 'active');
-    for (const activity of activeActivities) {
-        await recalculateActivityShares(activity.id, activity.totalBudget);
+        throw new Error(error.message);
     }
     
     await loadData();
-    Swal.fire('Success!', 'Member updated successfully', 'success');
     return true;
 }
-
 async function deleteMember(id) {
     if (_currentRole !== 'admin') { Swal.fire('Access Denied', 'Only administrators can delete members', 'error'); return; }
     const { data: payments } = await _supabase.from('payments').select('*').eq('member_id', id);
@@ -1234,13 +1412,16 @@ async function showMemberDetails(memberId) {
     const responsible = getPaymentResponsibleMember(member);
     const stats = await getUserStatistics(member.id);
     
+    // Use profile_picture_url (not profile_picture)
+    const pictureUrl = member.profile_picture_url;
+    
     const html = `
         <div class="member-profile-card">
             <div class="member-profile-header">
                 <div class="member-profile-picture">
-                    ${member.profile_picture ? 
-                        `<img src="${member.profile_picture}" alt="${member.name}">` : 
-                        `<i class="fas fa-user-circle"></i>`
+                    ${pictureUrl ? 
+                        `<img src="${pictureUrl}" alt="${member.name}" style="width: 100%; height: 100%; object-fit: cover; border-radius: 50%;">` : 
+                        `<i class="fas fa-user-circle" style="font-size: 50px; color: white;"></i>`
                     }
                 </div>
                 <div class="member-profile-name">${member.name}</div>
@@ -1667,26 +1848,119 @@ async function renderAdminActivities() {
 
 // Admin Payments
 async function renderAdminPayments() {
-    const payments = await getAllPayments();
+    // Show loading state immediately
     document.getElementById('pageContent').innerHTML = `
         <div class="card">
             <h2>All Payments <button class="btn-primary" onclick="openAddModal()"><i class="fas fa-plus"></i> Record Payment</button></h2>
-            <div class="members-table-container">
-                <table class="data-table" style="width: 100%;">
+            <div style="text-align: center; padding: 40px;">
+                <i class="fas fa-spinner fa-pulse fa-2x"></i>
+                <p>Loading payments...</p>
+            </div>
+        </div>
+    `;
+    
+    // Fetch payments
+    const payments = await getAllPayments();
+    
+    if (payments.length === 0) {
+        document.getElementById('pageContent').innerHTML = `
+            <div class="card">
+                <h2>All Payments <button class="btn-primary" onclick="openAddModal()"><i class="fas fa-plus"></i> Record Payment</button></h2>
+                <div style="text-align: center; padding: 40px;">
+                    <i class="fas fa-receipt" style="font-size: 48px; color: #ccc; margin-bottom: 16px; display: block;"></i>
+                    <p>No payments recorded yet.</p>
+                    <button class="btn-primary" onclick="openAddModal()" style="margin-top: 16px;">Record First Payment</button>
+                </div>
+            </div>
+        `;
+        return;
+    }
+    
+    // Display payments
+    document.getElementById('pageContent').innerHTML = `
+        <div class="card">
+            <h2>All Payments <button class="btn-primary" onclick="openAddModal()"><i class="fas fa-plus"></i> Record Payment</button></h2>
+            <div style="overflow-x: auto;">
+                <table class="data-table">
                     <thead>
-                        <tr><th>Date</th><th>Member</th><th>Activity</th><th>Amount (UGX)</th><th>Notes</th><th>Action</th></tr>
+                        <tr>
+                            <th>Date</th>
+                            <th>Member</th>
+                            <th>Activity</th>
+                            <th>Amount (UGX)</th>
+                            <th>Notes</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${payments.slice(0, 50).map(p => `  <!-- Limit to 50 most recent -->
+                            <tr>
+                                <td>${new Date(p.payment_date).toLocaleDateString()}</div>
+                                <td><strong>${p.memberName}</strong></div>
+                                <td>${p.activityName}</div>
+                                <td style="color: #27ae60; font-weight: bold;">UGX ${(p.amount || 0).toLocaleString()}</div>
+                                <td>${p.notes || '-'}</div>
+                                <td><button class="btn-delete-payment" onclick="deletePayment(${p.id})"><i class="fas fa-trash-alt"></i> Delete</button></div>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            </div>
+            ${payments.length > 50 ? `<p style="text-align: center; margin-top: 15px; font-size: 12px; color: #666;">Showing last 50 of ${payments.length} payments</p>` : ''}
+        </div>
+    `;
+}
+
+// User Payments
+async function renderUserPayments() {
+    // Show loading state
+    document.getElementById('pageContent').innerHTML = `
+        <div class="card">
+            <h2>My Payment History</h2>
+            <div style="text-align: center; padding: 40px;">
+                <i class="fas fa-spinner fa-pulse fa-2x"></i>
+                <p>Loading payment history...</p>
+            </div>
+        </div>
+    `;
+    
+    const payments = await getMemberPayments(_currentUser.id);
+    
+    if (payments.length === 0) {
+        document.getElementById('pageContent').innerHTML = `
+            <div class="card">
+                <h2>My Payment History</h2>
+                <div style="text-align: center; padding: 40px;">
+                    <i class="fas fa-receipt" style="font-size: 48px; color: #ccc; margin-bottom: 16px; display: block;"></i>
+                    <p>No payment history found.</p>
+                </div>
+            </div>
+        `;
+        return;
+    }
+    
+    document.getElementById('pageContent').innerHTML = `
+        <div class="card">
+            <h2>My Payment History</h2>
+            <div style="overflow-x: auto;">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Activity</th>
+                            <th>Amount (UGX)</th>
+                            <th>Notes</th>
+                        </tr>
                     </thead>
                     <tbody>
                         ${payments.map(p => `
                             <tr>
-                                <td>${new Date(p.payment_date).toLocaleDateString()}</td>
-                                <td><strong>${p.memberName}</strong></td>
-                                <td>${p.activityName}</td>
-                                <td style="color: var(--success); font-weight: bold;">UGX ${p.amount.toLocaleString()}</td>
-                                <td>${p.notes || '-'}</td>
-                                <td><button class="btn-delete-payment" onclick="deletePayment(${p.id})"><i class="fas fa-trash-alt"></i> Delete</button></td>
+                                <td>${new Date(p.payment_date).toLocaleDateString()}</div>
+                                <td>${p.activityName}</div>
+                                <td style="color: #27ae60; font-weight: bold;">UGX ${(p.amount || 0).toLocaleString()}</div>
+                                <td>${p.notes || '-'}</div>
                             </tr>
-                        `).join('') || '<tr><td colspan="6" style="text-align:center;">No payments recorded</td></tr>'}
+                        `).join('')}
                     </tbody>
                 </table>
             </div>
@@ -1694,29 +1968,82 @@ async function renderAdminPayments() {
     `;
 }
 
-// User Payments
-async function renderUserPayments() {
-    const payments = await getMemberPayments(_currentUser.id);
+let currentPaymentPage = 1;
+const PAYMENTS_PER_PAGE = 20;
+
+async function renderAdminPaymentsPaginated(page = 1) {
+    currentPaymentPage = page;
+    const start = (page - 1) * PAYMENTS_PER_PAGE;
+    const end = start + PAYMENTS_PER_PAGE;
+    
     document.getElementById('pageContent').innerHTML = `
         <div class="card">
-            <h2>My Payment History</h2>
-            <div class="members-table-container">
-                <table class="data-table" style="width: 100%;">
-                    <thead>
-                        <tr><th>Date</th><th>Activity</th><th>Amount (UGX)</th><th>Notes</th></tr>
-                    </thead>
-                    <tbody>
-                        ${payments.map(p => `
-                            <tr>
-                                <td>${new Date(p.payment_date).toLocaleDateString()}</td>
-                                <td>${p.activityName}</td>
-                                <td style="color: var(--success); font-weight: bold;">UGX ${p.amount.toLocaleString()}</td>
-                                <td>${p.notes || '-'}</td>
-                            </tr>
-                        `).join('') || '<tr><td colspan="4" style="text-align:center;">No payment history</td></tr>'}
-                    </tbody>
-                </table>
+            <h2>All Payments <button class="btn-primary" onclick="openAddModal()"><i class="fas fa-plus"></i> Record Payment</button></h2>
+            <div style="text-align: center; padding: 20px;">
+                <i class="fas fa-spinner fa-pulse"></i> Loading payments...
             </div>
+        </div>
+    `;
+    
+    const { data: payments, error, count } = await _supabase
+        .from('payments')
+        .select(`
+            *,
+            family_members(name),
+            activities(name)
+        `, { count: 'exact' })
+        .order('payment_date', { ascending: false })
+        .range(start, end - 1);
+    
+    if (error) {
+        console.error('Error fetching payments:', error);
+        return;
+    }
+    
+    const formattedPayments = payments.map(p => ({
+        ...p,
+        memberName: p.family_members?.name || 'Unknown',
+        activityName: p.activities?.name || 'Unknown'
+    }));
+    
+    const totalPages = Math.ceil(count / PAYMENTS_PER_PAGE);
+    
+    document.getElementById('pageContent').innerHTML = `
+        <div class="card">
+            <h2>All Payments <button class="btn-primary" onclick="openAddModal()"><i class="fas fa-plus"></i> Record Payment</button></h2>
+            ${formattedPayments.length === 0 ? `
+                <div style="text-align: center; padding: 40px;">
+                    <i class="fas fa-receipt" style="font-size: 48px; color: #ccc; margin-bottom: 16px; display: block;"></i>
+                    <p>No payments recorded yet.</p>
+                </div>
+            ` : `
+                <div style="overflow-x: auto;">
+                    <table class="data-table">
+                        <thead>
+                            <tr><th>Date</th><th>Member</th><th>Activity</th><th>Amount (UGX)</th><th>Notes</th><th>Action</th></tr>
+                        </thead>
+                        <tbody>
+                            ${formattedPayments.map(p => `
+                                <tr>
+                                    <td>${new Date(p.payment_date).toLocaleDateString()}</div>
+                                    <td><strong>${p.memberName}</strong></div>
+                                    <td>${p.activityName}</div>
+                                    <td style="color: #27ae60; font-weight: bold;">UGX ${(p.amount || 0).toLocaleString()}</div>
+                                    <td>${p.notes || '-'}</div>
+                                    <td><button class="btn-delete-payment" onclick="deletePayment(${p.id})"><i class="fas fa-trash-alt"></i> Delete</button></div>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+                ${totalPages > 1 ? `
+                    <div style="display: flex; justify-content: center; gap: 10px; margin-top: 20px;">
+                        <button class="btn-primary" onclick="renderAdminPaymentsPaginated(${page - 1})" ${page === 1 ? 'disabled' : ''}>&laquo; Previous</button>
+                        <span style="padding: 8px 16px;">Page ${page} of ${totalPages}</span>
+                        <button class="btn-primary" onclick="renderAdminPaymentsPaginated(${page + 1})" ${page === totalPages ? 'disabled' : ''}>Next &raquo;</button>
+                    </div>
+                ` : ''}
+            `}
         </div>
     `;
 }
@@ -2474,9 +2801,13 @@ function toggleEditMemberTypeFields() {
     if (memberType === 'board') {
         if (boardPositionDiv) boardPositionDiv.style.display = 'block';
         if (parentSelectDiv) parentSelectDiv.style.display = 'none';
+        // Clear parent selection for board members
+        document.getElementById('editMemberParentId').value = '';
     } else if (memberType === 'parent') {
         if (boardPositionDiv) boardPositionDiv.style.display = 'none';
         if (parentSelectDiv) parentSelectDiv.style.display = 'none';
+        // Clear parent selection for parents
+        document.getElementById('editMemberParentId').value = '';
     } else if (memberType === 'child' || memberType === 'dependent') {
         if (boardPositionDiv) boardPositionDiv.style.display = 'none';
         if (parentSelectDiv) parentSelectDiv.style.display = 'block';
@@ -2588,6 +2919,8 @@ function openEditMember(id) {
         document.getElementById('editMemberFavoriteColor').value = m.favorite_color || '#01605a';
         document.getElementById('editMemberType').value = m.member_type || (m.role === 'parent' ? 'parent' : 'child');
         document.getElementById('editMemberBoardPosition').value = m.board_position || '';
+        
+        // CRITICAL: Set parentId to empty string if null
         document.getElementById('editMemberParentId').value = m.parent_id || '';
         
         toggleEditMemberTypeFields();
@@ -2965,7 +3298,7 @@ if (addMemberForm) {
                 newForm.reset();
                 const preview = document.getElementById('addImagePreview');
                 if (preview) preview.innerHTML = '<i class="fas fa-camera"></i><span>Add Photo</span>';
-                window._addImageBase64 = null;
+                window._addImageFile || null
                 await renderCurrentPage();
                 queueToast('✅ Member Added', 'New family member has been added successfully.', 'success', 3000);
             }
@@ -2996,7 +3329,17 @@ if (editMemberForm) {
         try {
             const memberType = document.getElementById('editMemberType').value;
             const boardPosition = document.getElementById('editMemberBoardPosition').value;
-            const parentId = document.getElementById('editMemberParentId').value;
+            let parentId = document.getElementById('editMemberParentId').value;
+            
+            // CRITICAL: Convert empty string to null
+            if (parentId === '' || parentId === 'null' || parentId === 'undefined') {
+                parentId = null;
+            }
+            
+            // If member is board or parent, parentId should be null
+            if (memberType === 'board' || memberType === 'parent') {
+                parentId = null;
+            }
             
             const result = await updateMember(
                 parseInt(document.getElementById('editMemberId').value),
@@ -3004,7 +3347,7 @@ if (editMemberForm) {
                 document.getElementById('editMemberRole')?.value || (memberType === 'parent' ? 'parent' : 'child'),
                 document.getElementById('editMemberPhone').value,
                 document.getElementById('editMemberEmail').value,
-                window._editImageBase64 || null,
+                window._editImageFile || null,
                 document.getElementById('editMemberDob').value,
                 document.getElementById('editMemberBloodGroup').value,
                 document.getElementById('editMemberAllergies').value,
@@ -3017,17 +3360,30 @@ if (editMemberForm) {
                 document.getElementById('editMemberFavoriteColor').value,
                 memberType,
                 boardPosition,
-                parentId
+                parentId  // This will be null for board/parent members
             );
             
             if (result) {
                 closeModal('editMemberModal');
                 await renderCurrentPage();
-                queueToast('✅ Member Updated', 'Family member has been updated successfully.', 'success', 3000);
+                Swal.fire('Success!', 'Member updated successfully', 'success');
             }
         } catch (error) {
             console.error('Error updating member:', error);
-            Swal.fire('Error', 'Failed to update member. Please try again.', 'error');
+            
+            // Close modal first
+            closeModal('editMemberModal');
+            
+            // Show error in front
+            setTimeout(() => {
+                Swal.fire({
+                    title: 'Error!',
+                    text: error.message || 'Failed to update member. Please check your input.',
+                    icon: 'error',
+                    confirmButtonText: 'OK',
+                    confirmButtonColor: '#e74c3c'
+                });
+            }, 100);
         } finally {
             submitBtn.innerHTML = originalText;
             submitBtn.disabled = false;
