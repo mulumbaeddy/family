@@ -1,12 +1,14 @@
 {
-  "name": "BULUMBA BULAIIRE",
-  "short_name": "FamilyPay",
-  "description": "Family Tracker",
-  "start_url": "/",
+  "name": "OBUNANGWE BULAIIRE",
+  "short_name": "Family Tracker",
+  "description": "Family Payment Tracker with Offline Support",
+  "start_url": ".",
   "display": "standalone",
-  "background_color": "#01605a",
   "theme_color": "#01605a",
+  "background_color": "#ffffff",
   "orientation": "portrait",
+  "scope": "/",
+  "categories": ["finance", "family", "productivity"],
   "icons": [
     {
       "src": "icons/icon-72.png",
@@ -17,22 +19,26 @@
     {
       "src": "icons/icon-96.png",
       "sizes": "96x96",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any maskable"
     },
     {
       "src": "icons/icon-128.png",
       "sizes": "128x128",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any maskable"
     },
     {
       "src": "icons/icon-144.png",
       "sizes": "144x144",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any maskable"
     },
     {
       "src": "icons/icon-152.png",
       "sizes": "152x152",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any maskable"
     },
     {
       "src": "icons/icon-192.png",
@@ -43,7 +49,8 @@
     {
       "src": "icons/icon-384.png",
       "sizes": "384x384",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any maskable"
     },
     {
       "src": "icons/icon-512.png",

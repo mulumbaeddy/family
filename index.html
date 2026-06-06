@@ -11,10 +11,15 @@
     <title>OBUNANGWE BULAIIRE - Family Payment Tracker</title>
     <link rel="stylesheet" href="style.css">
     <link rel="manifest" href="manifest.json">
-    <link rel="apple-touch-icon" href="icons/icon-192.png">
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- PWA Meta Tags -->
+<link rel="manifest" href="manifest.json">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="OBUNANGWE">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<meta name="theme-color" content="#01605a">
 </head>
 <body>
     <div id="loadingScreen" class="loading-screen">
@@ -88,6 +93,9 @@
                 <div class="nav-item" onclick="switchPage('payments'); toggleMobileSidebar()" id="paymentsNav">
                     <i class="fas fa-money-bill-wave"></i><span>Payments</span>
                 </div>
+                <div class="nav-item" onclick="switchPage('paymentsummary'); toggleMobileSidebar()" id="paymentsSummaryNav">
+                    <i class="fas fa-chart-pie"></i><span>Payment Summary</span>
+                </div>
                 <div class="nav-item" onclick="switchPage('contacts'); toggleMobileSidebar()">
                     <i class="fas fa-address-book"></i><span>Contacts</span>
                 </div>
@@ -132,55 +140,385 @@
         </div>
     </div>
 
-    <button class="fab" id="fabButton" style="display: none;" onclick="openAddModal()"><i class="fas fa-plus"></i></button>
+    <!-- Add Activity Modal -->
+    <div id="addActivityModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Create Activity</h3>
+                <button class="close-modal" onclick="closeModal('addActivityModal')">&times;</button>
+            </div>
+            <form id="addActivityForm">
+                <div class="form-group">
+                    <label>Activity Name</label>
+                    <input type="text" id="activityName" required>
+                </div>
+                <div class="form-group">
+                    <label>Description</label>
+                    <textarea id="activityDesc" rows="2"></textarea>
+                </div>
+                <div class="form-group">
+                    <label>Budget (UGX)</label>
+                    <input type="number" id="activityBudget" required>
+                </div>
+                <div class="form-group">
+                    <label>Due Date</label>
+                    <input type="date" id="activityDueDate" required>
+                </div>
+                <button type="submit" class="btn-primary">Create Activity</button>
+            </form>
+        </div>
+    </div>
 
-    <!-- Modals -->
-    <div id="addActivityModal" class="modal"><div class="modal-content"><div class="modal-header"><h3>Create Activity</h3><button class="close-modal" onclick="closeModal('addActivityModal')">&times;</button></div>
-    <form id="addActivityForm"><div class="form-group"><label>Activity Name</label><input type="text" id="activityName" required></div>
-    <div class="form-group"><label>Description</label><textarea id="activityDesc" rows="2"></textarea></div>
-    <div class="form-group"><label>Budget (UGX)</label><input type="number" id="activityBudget" required></div>
-    <div class="form-group"><label>Due Date</label><input type="date" id="activityDueDate" required></div>
-    <button type="submit" class="btn-primary">Create</button></form></div></div>
+    <!-- Add Member Modal (Enhanced) -->
+    <div id="addMemberModal" class="modal">
+        <div class="modal-content" style="max-width: 500px; max-height: 85vh; overflow-y: auto;">
+            <div class="modal-header">
+                <h3>Add Family Member</h3>
+                <button class="close-modal" onclick="closeModal('addMemberModal')">&times;</button>
+            </div>
+            <form id="addMemberForm">
+                <div class="form-group">
+                    <label>Profile Picture</label>
+                    <div class="image-upload-container">
+                        <div class="current-image" id="addImagePreview" onclick="document.getElementById('addMemberImage').click()">
+                            <i class="fas fa-camera"></i>
+                            <span>Add Photo</span>
+                        </div>
+                        <input type="file" id="addMemberImage" accept="image/*" style="display:none" onchange="previewAddImage(this)">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Full Name *</label>
+                    <input type="text" id="memberName" required>
+                </div>
+                <div class="form-group">
+                    <label>Member Type *</label>
+                    <select id="memberType" onchange="toggleMemberTypeFields()" required>
+                        <option value="board">🏛️ Board Member (Family Head)</option>
+                        <option value="parent">👨‍👩 Parent</option>
+                        <option value="child">🧒 Child (Self-Paying)</option>
+                        <option value="dependent">👶 Dependent (Non-Paying)</option>
+                    </select>
+                </div>
+                <div class="form-group" id="boardPositionDiv" style="display:none;">
+                    <label>Board Position</label>
+                    <select id="memberBoardPosition">
+                        <option value="">Select Position</option>
+                        <option value="chairperson">Chairperson</option>
+                        <option value="vice_chairperson">Vice Chairperson</option>
+                        <option value="treasurer">Treasurer</option>
+                        <option value="secretary">Secretary</option>
+                        <option value="member">Board Member</option>
+                    </select>
+                </div>
+                <div class="form-group" id="parentSelectDiv" style="display:none;">
+                    <label>Responsible Parent/Guardian</label>
+                    <select id="memberParentId">
+                        <option value="">Select parent/guardian</option>
+                    </select>
+                    <small class="form-hint">This person will be responsible for this member's payments</small>
+                </div>
+                <div class="form-group">
+                    <label>Phone Number</label>
+                    <input type="tel" id="memberPhone" placeholder="e.g., +256 XXX XXX XXX">
+                </div>
+                <div class="form-group">
+                    <label>Email Address</label>
+                    <input type="email" id="memberEmail" placeholder="email@example.com">
+                </div>
+                <div class="form-group">
+                    <label>Date of Birth</label>
+                    <input type="date" id="memberDob">
+                </div>
+                <div class="form-group">
+                    <label>Blood Group</label>
+                    <select id="memberBloodGroup">
+                        <option value="">Select blood group</option>
+                        <option value="A+">A+</option>
+                        <option value="A-">A-</option>
+                        <option value="B+">B+</option>
+                        <option value="B-">B-</option>
+                        <option value="O+">O+</option>
+                        <option value="O-">O-</option>
+                        <option value="AB+">AB+</option>
+                        <option value="AB-">AB-</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Allergies / Medical Conditions</label>
+                    <textarea id="memberAllergies" rows="2" placeholder="e.g., Peanuts, Penicillin, Asthma..."></textarea>
+                    <small class="form-hint">Important medical information for emergencies</small>
+                </div>
+                <div class="form-group">
+                    <label>Emergency Contact</label>
+                    <input type="text" id="memberEmergencyContact" placeholder="Name and phone number">
+                </div>
+                <div class="form-group">
+                    <label>Occupation / School</label>
+                    <input type="text" id="memberOccupation" placeholder="e.g., Software Engineer, Makerere University">
+                </div>
+                <div class="form-group">
+                    <label>Location</label>
+                    <input type="text" id="memberLocation" placeholder="e.g., Kampala, Uganda">
+                </div>
+                <div class="form-group">
+                    <label>Marital Status</label>
+                    <select id="memberMaritalStatus">
+                        <option value="">Select status</option>
+                        <option value="single">Single</option>
+                        <option value="married">Married</option>
+                        <option value="divorced">Divorced</option>
+                        <option value="widowed">Widowed</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Anniversary / Special Date</label>
+                    <input type="date" id="memberAnniversary">
+                </div>
+                <div class="form-group">
+                    <label>Bio / Hobbies</label>
+                    <textarea id="memberBio" rows="3" placeholder="Tell us about yourself..."></textarea>
+                </div>
+                <div class="form-group">
+                    <label>Favorite Color</label>
+                    <input type="color" id="memberFavoriteColor" value="#01605a">
+                </div>
+                <button type="submit" class="btn-primary">Add Member</button>
+            </form>
+        </div>
+    </div>
 
-    <div id="addMemberModal" class="modal"><div class="modal-content"><div class="modal-header"><h3>Add Member</h3><button class="close-modal" onclick="closeModal('addMemberModal')">&times;</button></div>
-    <form id="addMemberForm"><div class="form-group"><label>Name</label><input type="text" id="memberName" required></div>
-    <div class="form-group"><label>Role</label><select id="memberRole"><option value="parent">Parent</option><option value="child">Child</option></select></div>
-    <div class="form-group"><label>Phone</label><input type="tel" id="memberPhone"></div>
-    <div class="form-group"><label>Email</label><input type="email" id="memberEmail"></div>
-    <button type="submit" class="btn-primary">Add</button></form></div></div>
+    <!-- Edit Member Modal (Enhanced) -->
+    <div id="editMemberModal" class="modal">
+        <div class="modal-content" style="max-width: 500px; max-height: 85vh; overflow-y: auto;">
+            <div class="modal-header">
+                <h3>Edit Member</h3>
+                <button class="close-modal" onclick="closeModal('editMemberModal')">&times;</button>
+            </div>
+            <form id="editMemberForm">
+                <input type="hidden" id="editMemberId">
+                <div class="form-group">
+                    <label>Profile Picture</label>
+                    <div class="image-upload-container">
+                        <div class="current-image" id="editImagePreview" onclick="document.getElementById('editMemberImage').click()">
+                            <i class="fas fa-camera"></i>
+                            <span>Change Photo</span>
+                        </div>
+                        <input type="file" id="editMemberImage" accept="image/*" style="display:none" onchange="previewEditImage(this)">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Full Name *</label>
+                    <input type="text" id="editMemberName" required>
+                </div>
+                <div class="form-group">
+                    <label>Member Type *</label>
+                    <select id="editMemberType" onchange="toggleEditMemberTypeFields()" required>
+                        <option value="board">🏛️ Board Member</option>
+                        <option value="parent">👨‍👩 Parent</option>
+                        <option value="child">🧒 Child (Self-Paying)</option>
+                        <option value="dependent">👶 Dependent (Non-Paying)</option>
+                    </select>
+                </div>
+                <div class="form-group" id="editBoardPositionDiv" style="display:none;">
+                    <label>Board Position</label>
+                    <select id="editMemberBoardPosition">
+                        <option value="">Select Position</option>
+                        <option value="chairperson">Chairperson</option>
+                        <option value="vice_chairperson">Vice Chairperson</option>
+                        <option value="treasurer">Treasurer</option>
+                        <option value="secretary">Secretary</option>
+                        <option value="member">Board Member</option>
+                    </select>
+                </div>
+                <div class="form-group" id="editParentSelectDiv" style="display:none;">
+                    <label>Responsible Parent/Guardian</label>
+                    <select id="editMemberParentId">
+                        <option value="">Select parent/guardian</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Phone Number</label>
+                    <input type="tel" id="editMemberPhone">
+                </div>
+                <div class="form-group">
+                    <label>Email Address</label>
+                    <input type="email" id="editMemberEmail">
+                </div>
+                <div class="form-group">
+                    <label>Date of Birth</label>
+                    <input type="date" id="editMemberDob">
+                </div>
+                <div class="form-group">
+                    <label>Blood Group</label>
+                    <select id="editMemberBloodGroup">
+                        <option value="">Select</option>
+                        <option value="A+">A+</option>
+                        <option value="A-">A-</option>
+                        <option value="B+">B+</option>
+                        <option value="B-">B-</option>
+                        <option value="O+">O+</option>
+                        <option value="O-">O-</option>
+                        <option value="AB+">AB+</option>
+                        <option value="AB-">AB-</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Allergies / Medical Conditions</label>
+                    <textarea id="editMemberAllergies" rows="2"></textarea>
+                </div>
+                <div class="form-group">
+                    <label>Emergency Contact</label>
+                    <input type="text" id="editMemberEmergencyContact">
+                </div>
+                <div class="form-group">
+                    <label>Occupation / School</label>
+                    <input type="text" id="editMemberOccupation">
+                </div>
+                <div class="form-group">
+                    <label>Location</label>
+                    <input type="text" id="editMemberLocation">
+                </div>
+                <div class="form-group">
+                    <label>Marital Status</label>
+                    <select id="editMemberMaritalStatus">
+                        <option value="">Select</option>
+                        <option value="single">Single</option>
+                        <option value="married">Married</option>
+                        <option value="divorced">Divorced</option>
+                        <option value="widowed">Widowed</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Anniversary / Special Date</label>
+                    <input type="date" id="editMemberAnniversary">
+                </div>
+                <div class="form-group">
+                    <label>Bio / Hobbies</label>
+                    <textarea id="editMemberBio" rows="3"></textarea>
+                </div>
+                <div class="form-group">
+                    <label>Favorite Color</label>
+                    <input type="color" id="editMemberFavoriteColor" value="#01605a">
+                </div>
+                <button type="submit" class="btn-primary">Update Member</button>
+            </form>
+        </div>
+    </div>
 
-    <div id="editMemberModal" class="modal"><div class="modal-content"><div class="modal-header"><h3>Edit Member</h3><button class="close-modal" onclick="closeModal('editMemberModal')">&times;</button></div>
-    <form id="editMemberForm"><input type="hidden" id="editMemberId">
-    <div class="form-group"><label>Name</label><input type="text" id="editMemberName" required></div>
-    <div class="form-group"><label>Role</label><select id="editMemberRole"><option value="parent">Parent</option><option value="child">Child</option></select></div>
-    <div class="form-group"><label>Phone</label><input type="tel" id="editMemberPhone"></div>
-    <div class="form-group"><label>Email</label><input type="email" id="editMemberEmail"></div>
-    <button type="submit" class="btn-primary">Update Member</button></form></div></div>
+    <!-- Payment Modal -->
+    <div id="paymentModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Record Payment</h3>
+                <button class="close-modal" onclick="closeModal('paymentModal')">&times;</button>
+            </div>
+            <form id="paymentForm">
+                <div class="form-group">
+                    <label>Activity</label>
+                    <select id="paymentActivityId" required></select>
+                </div>
+                <div class="form-group">
+                    <label>Member</label>
+                    <select id="paymentMemberId" required></select>
+                </div>
+                <div class="form-group">
+                    <label>Amount (UGX)</label>
+                    <input type="number" id="paymentAmount" required>
+                </div>
+                <div class="form-group">
+                    <label>Date</label>
+                    <input type="date" id="paymentDate" required>
+                </div>
+                <div class="form-group">
+                    <label>Notes</label>
+                    <textarea id="paymentNotes" rows="2"></textarea>
+                </div>
+                <button type="submit" class="btn-primary">Record Payment</button>
+            </form>
+        </div>
+    </div>
 
-    <div id="paymentModal" class="modal"><div class="modal-content"><div class="modal-header"><h3>Record Payment</h3><button class="close-modal" onclick="closeModal('paymentModal')">&times;</button></div>
-    <form id="paymentForm"><div class="form-group"><label>Activity</label><select id="paymentActivityId" required></select></div>
-    <div class="form-group"><label>Member</label><select id="paymentMemberId" required></select></div>
-    <div class="form-group"><label>Amount (UGX)</label><input type="number" id="paymentAmount" required></div>
-    <div class="form-group"><label>Date</label><input type="date" id="paymentDate" required></div>
-    <div class="form-group"><label>Notes</label><textarea id="paymentNotes" rows="2"></textarea></div>
-    <button type="submit" class="btn-primary">Record</button></form></div></div>
+    <!-- Edit Activity Modal -->
+    <div id="editActivityModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Edit Activity</h3>
+                <button class="close-modal" onclick="closeModal('editActivityModal')">&times;</button>
+            </div>
+            <form id="editActivityForm">
+                <input type="hidden" id="editActivityId">
+                <div class="form-group">
+                    <label>Activity Name</label>
+                    <input type="text" id="editActivityName" required>
+                </div>
+                <div class="form-group">
+                    <label>Description</label>
+                    <textarea id="editActivityDesc" rows="2"></textarea>
+                </div>
+                <div class="form-group">
+                    <label>Budget (UGX)</label>
+                    <input type="number" id="editActivityBudget" required>
+                </div>
+                <div class="form-group">
+                    <label>Due Date</label>
+                    <input type="date" id="editActivityDueDate" required>
+                </div>
+                <div class="form-group">
+                    <label>Status</label>
+                    <select id="editActivityStatus">
+                        <option value="active">Active</option>
+                        <option value="completed">Completed</option>
+                    </select>
+                </div>
+                <button type="submit" class="btn-primary">Update Activity</button>
+            </form>
+        </div>
+    </div>
 
-    <div id="editActivityModal" class="modal"><div class="modal-content"><div class="modal-header"><h3>Edit Activity</h3><button class="close-modal" onclick="closeModal('editActivityModal')">&times;</button></div>
-    <form id="editActivityForm"><input type="hidden" id="editActivityId">
-    <div class="form-group"><label>Name</label><input type="text" id="editActivityName" required></div>
-    <div class="form-group"><label>Description</label><textarea id="editActivityDesc" rows="2"></textarea></div>
-    <div class="form-group"><label>Budget</label><input type="number" id="editActivityBudget" required></div>
-    <div class="form-group"><label>Due Date</label><input type="date" id="editActivityDueDate" required></div>
-    <div class="form-group"><label>Status</label><select id="editActivityStatus"><option value="active">Active</option><option value="completed">Completed</option></select></div>
-    <button type="submit" class="btn-primary">Update</button></form></div></div>
+    <!-- Share Report Modal -->
+    <div id="shareModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Share Progress Report</h3>
+                <button class="close-modal" onclick="closeModal('shareModal')">&times;</button>
+            </div>
+            <div id="shareContent"></div>
+            <div style="margin-top:20px">
+                <button onclick="sendWhatsAppToAll()" class="btn-whatsapp" style="width:100%">
+                    <i class="fab fa-whatsapp"></i> Share via WhatsApp
+                </button>
+            </div>
+        </div>
+    </div>
 
-    <div id="shareModal" class="modal"><div class="modal-content"><div class="modal-header"><h3>Share Progress Report</h3><button class="close-modal" onclick="closeModal('shareModal')">&times;</button></div>
-    <div id="shareContent"></div><div style="margin-top:20px"><button onclick="sendWhatsAppToAll()" class="btn-whatsapp" style="width:100%"><i class="fab fa-whatsapp"></i> Share via WhatsApp (Choose Contacts)</button></div></div></div>
+    <!-- Activity Details Modal -->
+    <div id="activityDetailsModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Activity Details</h3>
+                <button class="close-modal" onclick="closeModal('activityDetailsModal')">&times;</button>
+            </div>
+            <div id="activityDetailsContent"></div>
+        </div>
+        <!-- In the activityDetailsModal, add a Complete button -->
+<div style="margin-top: 15px; display: flex; gap: 10px; justify-content: flex-end;">
+    <button class="btn-whatsapp" onclick="manuallyCompleteActivity(currentActivityId)" style="background: var(--warning);">
+        <i class="fas fa-check-circle"></i> Complete Activity & Waive Balances
+    </button>
+</div>
+    </div>
 
-    <div id="activityDetailsModal" class="modal"><div class="modal-content"><div class="modal-header"><h3>Activity Details</h3><button class="close-modal" onclick="closeModal('activityDetailsModal')">&times;</button></div>
-    <div id="activityDetailsContent"></div></div></div>
-
-    <div id="toastContainer" class="toast-container"></div>
+    <!-- Member Details Modal -->
+    <div id="memberDetailsModal" class="modal">
+        <div class="modal-content" style="max-width: 500px;">
+            <div class="modal-header">
+                <h3>Member Profile</h3>
+                <button class="close-modal" onclick="closeModal('memberDetailsModal')">&times;</button>
+            </div>
+            <div id="memberDetailsContent"></div>
+        </div>
+    </div>
 
     <!-- Notification Center Modal -->
     <div id="notificationModal" class="modal">
@@ -197,6 +535,9 @@
             </div>
         </div>
     </div>
+
+    <!-- Toast Container -->
+    <div id="toastContainer" class="toast-container"></div>
 
     <script src="script.js"></script>
     
