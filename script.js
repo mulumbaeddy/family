@@ -321,112 +321,136 @@ async function openAdjustmentModal(activityId, memberId = null) {
     const memberActivities = activity.memberPayments || [];
     
     // If memberId is provided, we're adjusting for a single member
-    // Otherwise, we can select multiple members
     const isSingleMember = memberId !== null;
     
-    let memberSelectHtml = '';
-    if (!isSingleMember) {
-        // Build member selection checkboxes
-        memberSelectHtml = `
-            <div class="form-group">
-                <label>Select Members to Adjust</label>
-                <div style="max-height: 200px; overflow-y: auto; border: 1px solid #ddd; border-radius: 8px; padding: 10px;">
-                    ${members.map(m => {
-                        const memberActivity = memberActivities.find(ma => ma.member_id === m.id);
-                        const balance = (memberActivity?.amount_owed || 0) - (memberActivity?.amount_paid || 0);
-                        if (balance <= 0 && memberActivity?.status !== 'exempt') return ''; // Skip settled members
-                        return `
-                            <label style="display: flex; align-items: center; padding: 8px; margin: 0; cursor: pointer; border-bottom: 1px solid #f0f0f0;">
-                                <input type="checkbox" class="member-select-checkbox" value="${m.id}" style="margin-right: 12px;">
-                                <div style="flex: 1;">
-                                    <strong>${m.name}</strong>
-                                    <span style="font-size: 11px; color: #666; margin-left: 8px;">${m.member_type}</span>
-                                    <div style="font-size: 11px;">
-                                        Owed: UGX ${(memberActivity?.amount_owed || 0).toLocaleString()} | 
-                                        Paid: UGX ${(memberActivity?.amount_paid || 0).toLocaleString()} | 
-                                        Balance: UGX ${balance.toLocaleString()}
-                                    </div>
-                                </div>
-                            </label>
-                        `;
-                    }).join('')}
-                </div>
-                <div style="margin-top: 8px;">
-                    <button type="button" class="btn-edit" onclick="selectAllMembers()" style="margin-right: 5px; padding: 4px 8px;">Select All</button>
-                    <button type="button" class="btn-edit" onclick="deselectAllMembers()" style="padding: 4px 8px;">Deselect All</button>
-                </div>
-            </div>
-        `;
-    }
-    
-    // Get the member name if single member
-    let memberName = '';
+    let selectedMember = null;
     let currentBalance = 0;
+    let otherMembers = [];
+    let otherMembersList = [];
+    let redistributionPreview = '';
+    
     if (isSingleMember) {
-        const member = members.find(m => m.id === memberId);
+        selectedMember = members.find(m => m.id === memberId);
         const memberActivity = memberActivities.find(ma => ma.member_id === memberId);
-        memberName = member?.name || 'Unknown';
         currentBalance = (memberActivity?.amount_owed || 0) - (memberActivity?.amount_paid || 0);
+        
+        // Get other paying members for redistribution
+        otherMembers = memberActivities.filter(ma => 
+            ma.member_id !== memberId && 
+            ma.status !== 'exempt' && 
+            ma.amount_owed > 0
+        );
+        
+        otherMembersList = otherMembers.map(om => ({
+            id: om.member_id,
+            name: om.family_members?.name || 'Unknown',
+            currentAmount: om.amount_owed,
+            balance: om.amount_owed - om.amount_paid
+        }));
     }
     
     const result = await Swal.fire({
-        title: isSingleMember ? `Adjust Payment for ${memberName}` : 'Adjust Payments - Select Members',
+        title: isSingleMember ? `Adjust Payment for ${selectedMember?.name}` : 'Bulk Adjust Members',
         html: `
             <div style="text-align: left;">
+                <!-- Activity Info -->
                 <div style="background: var(--primary-light); padding: 12px; border-radius: 8px; margin-bottom: 15px;">
-                    <p style="margin: 0;"><strong>Activity:</strong> ${activity.name}</p>
-                    <p style="margin: 5px 0 0;"><strong>Total Budget:</strong> UGX ${activity.totalBudget.toLocaleString()}</p>
-                    ${isSingleMember ? `<p style="margin: 5px 0 0;"><strong>Current Balance:</strong> UGX ${currentBalance.toLocaleString()}</p>` : ''}
+                    <p style="margin: 0;"><strong>📋 Activity:</strong> ${activity.name}</p>
+                    <p style="margin: 5px 0 0;"><strong>💰 Total Budget:</strong> UGX ${activity.totalBudget.toLocaleString()}</p>
                 </div>
                 
-                ${memberSelectHtml}
-                
-                <div class="form-group" style="margin-top: 15px;">
-                    <label>Adjustment Amount (UGX)</label>
-                    <input type="number" id="adjustmentAmount" class="swal2-input" placeholder="Enter adjustment amount" style="width: 100%;">
+                ${isSingleMember ? `
+                <!-- Member Info -->
+                <div style="background: #f0f0f0; padding: 12px; border-radius: 8px; margin-bottom: 15px;">
+                    <p style="margin: 0;"><strong>👤 Member:</strong> ${selectedMember?.name}</p>
+                    <p style="margin: 5px 0 0;"><strong>💰 Current Balance:</strong> UGX ${currentBalance.toLocaleString()}</p>
+                    <p style="margin: 5px 0 0;"><strong>👥 Other Paying Members:</strong> ${otherMembers.length}</p>
                 </div>
+                ` : ''}
                 
+                <!-- Adjustment Type -->
                 <div class="form-group">
                     <label>Adjustment Type</label>
-                    <select id="adjustmentType" class="swal2-select" style="width: 100%;" onchange="toggleAdjustmentReasonRequired()">
-                        <option value="increase">Increase Amount Owed (+)</option>
-                        <option value="decrease">Decrease Amount Owed (-)</option>
-                        <option value="waive">Waive/Remove Amount (Set to zero)</option>
-                        <option value="discount">Apply Discount (%)</option>
-                        <option value="penalty">Add Penalty (%)</option>
+                    <select id="adjustmentType" class="swal2-select" style="width: 100%; padding: 8px; border-radius: 8px;">
+                        <option value="decrease">📉 Decrease Member's Amount (Redistribute to others)</option>
+                        <option value="increase">📈 Increase Member's Amount (Deduct from others)</option>
+                        <option value="waive">🚫 Waive Complete Amount (Redistribute to others)</option>
+                        <option value="discount">🏷️ Apply Discount (%)</option>
+                        <option value="penalty">⚠️ Add Penalty (%)</option>
                     </select>
                 </div>
                 
-                <div class="form-group" id="percentageDiv" style="display: none;">
-                    <label>Percentage (%)</label>
-                    <input type="number" id="adjustmentPercentage" class="swal2-input" placeholder="Enter percentage" style="width: 100%;">
+                <!-- Amount Input (for decrease/increase) -->
+                <div class="form-group" id="amountDiv">
+                    <label id="amountLabel">Amount (UGX)</label>
+                    <input type="number" id="adjustmentAmount" class="swal2-input" placeholder="Enter amount" style="width: 100%; padding: 8px; border-radius: 8px;">
                 </div>
                 
+                <!-- Percentage Input (hidden by default) -->
+                <div class="form-group" id="percentageDiv" style="display: none;">
+                    <label>Percentage (%)</label>
+                    <input type="number" id="adjustmentPercentage" class="swal2-input" placeholder="Enter percentage (1-100)" style="width: 100%; padding: 8px; border-radius: 8px;">
+                </div>
+                
+                <!-- Source Selection for Increase (who to deduct from) -->
+                <div id="sourceMembersDiv" style="display: none; margin-top: 15px;">
+                    <label style="font-weight: 600;">Deduct from which members?</label>
+                    <div style="background: #f8f9fa; border-radius: 8px; padding: 10px; margin-top: 8px; max-height: 200px; overflow-y: auto;">
+                        <label style="display: flex; align-items: center; padding: 8px; cursor: pointer; border-bottom: 1px solid #e0e0e0;">
+                            <input type="radio" name="sourceType" value="all" checked style="margin-right: 10px;">
+                            <span>📊 Distribute equally among all other paying members</span>
+                        </label>
+                        <label style="display: flex; align-items: center; padding: 8px; cursor: pointer; border-bottom: 1px solid #e0e0e0;">
+                            <input type="radio" name="sourceType" value="select" style="margin-right: 10px;">
+                            <span>🎯 Select specific members to deduct from</span>
+                        </label>
+                        <div id="memberSelectionList" style="margin-top: 10px; margin-left: 25px; display: none;">
+                            ${otherMembersList.map(m => `
+                                <label style="display: flex; align-items: center; padding: 6px; cursor: pointer;">
+                                    <input type="checkbox" class="source-member-checkbox" value="${m.id}" style="margin-right: 10px;">
+                                    <span><strong>${m.name}</strong> (Current: UGX ${m.currentAmount.toLocaleString()})</span>
+                                </label>
+                            `).join('')}
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Redistribution Preview -->
+                <div id="adjustmentPreview" style="display: none; margin-top: 15px; background: #e8f5e9; padding: 12px; border-radius: 8px;">
+                    <div style="font-weight: bold; margin-bottom: 8px;">
+                        <i class="fas fa-chart-line"></i> Preview:
+                    </div>
+                    <div id="previewDetails" style="font-size: 13px;"></div>
+                </div>
+                
+                <!-- Reason -->
                 <div class="form-group">
                     <label>Reason for Adjustment</label>
-                    <textarea id="adjustmentReason" class="swal2-textarea" rows="3" placeholder="e.g., Special consideration, discount, penalty, correction..."></textarea>
+                    <textarea id="adjustmentReason" class="swal2-textarea" rows="3" placeholder="e.g., Special consideration, discount, penalty, correction..." style="width: 100%; padding: 8px; border-radius: 8px;"></textarea>
                 </div>
             </div>
         `,
         focusConfirm: false,
         preConfirm: () => {
-            const amount = parseFloat(document.getElementById('adjustmentAmount')?.value);
             const type = document.getElementById('adjustmentType')?.value;
-            const reason = document.getElementById('adjustmentReason')?.value;
+            const amount = parseFloat(document.getElementById('adjustmentAmount')?.value);
             const percentage = parseFloat(document.getElementById('adjustmentPercentage')?.value);
+            const reason = document.getElementById('adjustmentReason')?.value;
             
-            // Get selected members
-            let selectedMembers = [];
-            if (isSingleMember) {
-                selectedMembers = [memberId];
-            } else {
-                const checkboxes = document.querySelectorAll('.member-select-checkbox:checked');
-                selectedMembers = Array.from(checkboxes).map(cb => parseInt(cb.value));
-            }
-            
-            if (selectedMembers.length === 0) {
-                Swal.showValidationMessage('Please select at least one member');
-                return false;
+            // Get source members for increase
+            let sourceMembers = [];
+            if (type === 'increase') {
+                const sourceType = document.querySelector('input[name="sourceType"]:checked')?.value;
+                if (sourceType === 'select') {
+                    const checkboxes = document.querySelectorAll('.source-member-checkbox:checked');
+                    sourceMembers = Array.from(checkboxes).map(cb => parseInt(cb.value));
+                    if (sourceMembers.length === 0) {
+                        Swal.showValidationMessage('Please select at least one member to deduct from');
+                        return false;
+                    }
+                } else {
+                    sourceMembers = 'all';
+                }
             }
             
             if (type !== 'discount' && type !== 'penalty') {
@@ -448,46 +472,151 @@ async function openAdjustmentModal(activityId, memberId = null) {
                 return false;
             }
             
-            return { 
-                selectedMembers, 
-                amount, 
-                type, 
-                reason,
-                percentage,
-                isSingleMember 
-            };
+            return { amount, type, reason, percentage, sourceMembers };
         },
         showCancelButton: true,
         confirmButtonText: 'Apply Adjustment',
         cancelButtonText: 'Cancel',
-        width: '600px'
+        width: '550px',
+        didOpen: () => {
+            const typeSelect = document.getElementById('adjustmentType');
+            const amountDiv = document.getElementById('amountDiv');
+            const percentageDiv = document.getElementById('percentageDiv');
+            const amountInput = document.getElementById('adjustmentAmount');
+            const amountLabel = document.getElementById('amountLabel');
+            const sourceMembersDiv = document.getElementById('sourceMembersDiv');
+            const adjustmentPreview = document.getElementById('adjustmentPreview');
+            const previewDetails = document.getElementById('previewDetails');
+            
+            // Function to update preview
+            const updatePreview = () => {
+                const type = typeSelect.value;
+                const amount = parseFloat(amountInput?.value || 0);
+                
+                if (!amount || amount <= 0) {
+                    adjustmentPreview.style.display = 'none';
+                    return;
+                }
+                
+                if (type === 'decrease') {
+                    // Decrease preview - show redistribution
+                    if (otherMembers.length > 0) {
+                        const sharePerMember = amount / otherMembers.length;
+                        previewDetails.innerHTML = `
+                            <strong>${selectedMember?.name}</strong> will be DECREASED by UGX ${amount.toLocaleString()}<br>
+                            📤 This amount will be REDISTRIBUTED to ${otherMembers.length} other member(s):<br>
+                            ${otherMembersList.map(m => `&nbsp;&nbsp;• ${m.name}: +UGX ${sharePerMember.toLocaleString()}`).join('<br>')}
+                        `;
+                        adjustmentPreview.style.display = 'block';
+                    } else {
+                        previewDetails.innerHTML = `<span style="color: #e74c3c;">⚠️ No other members to redistribute to!</span>`;
+                        adjustmentPreview.style.display = 'block';
+                    }
+                } else if (type === 'increase') {
+                    // Increase preview - show who will be deducted
+                    const sourceType = document.querySelector('input[name="sourceType"]:checked')?.value;
+                    if (sourceType === 'all' && otherMembers.length > 0) {
+                        const sharePerMember = amount / otherMembers.length;
+                        previewDetails.innerHTML = `
+                            <strong>${selectedMember?.name}</strong> will be INCREASED by UGX ${amount.toLocaleString()}<br>
+                            📥 This amount will be DEDUCTED from ${otherMembers.length} other member(s):<br>
+                            ${otherMembersList.map(m => `&nbsp;&nbsp;• ${m.name}: -UGX ${sharePerMember.toLocaleString()}`).join('<br>')}
+                        `;
+                        adjustmentPreview.style.display = 'block';
+                    } else if (sourceType === 'select') {
+                        const selectedIds = Array.from(document.querySelectorAll('.source-member-checkbox:checked')).map(cb => parseInt(cb.value));
+                        if (selectedIds.length > 0) {
+                            const selectedMembers = otherMembersList.filter(m => selectedIds.includes(m.id));
+                            const sharePerMember = amount / selectedMembers.length;
+                            previewDetails.innerHTML = `
+                                <strong>${selectedMember?.name}</strong> will be INCREASED by UGX ${amount.toLocaleString()}<br>
+                                📥 This amount will be DEDUCTED from ${selectedMembers.length} selected member(s):<br>
+                                ${selectedMembers.map(m => `&nbsp;&nbsp;• ${m.name}: -UGX ${sharePerMember.toLocaleString()}`).join('<br>')}
+                            `;
+                            adjustmentPreview.style.display = 'block';
+                        } else {
+                            adjustmentPreview.style.display = 'none';
+                        }
+                    } else {
+                        adjustmentPreview.style.display = 'none';
+                    }
+                } else {
+                    adjustmentPreview.style.display = 'none';
+                }
+            };
+            
+            // Handle type change
+            typeSelect.addEventListener('change', () => {
+                const type = typeSelect.value;
+                
+                if (type === 'discount' || type === 'penalty') {
+                    amountDiv.style.display = 'none';
+                    percentageDiv.style.display = 'block';
+                    sourceMembersDiv.style.display = 'none';
+                    adjustmentPreview.style.display = 'none';
+                } else {
+                    amountDiv.style.display = 'block';
+                    percentageDiv.style.display = 'none';
+                    
+                    if (type === 'decrease') {
+                        amountLabel.innerHTML = 'Amount to Decrease (UGX)';
+                        sourceMembersDiv.style.display = 'none';
+                        if (amountInput) amountInput.placeholder = 'Enter amount to subtract';
+                        updatePreview();
+                    } else if (type === 'increase') {
+                        amountLabel.innerHTML = 'Amount to Increase (UGX)';
+                        sourceMembersDiv.style.display = 'block';
+                        if (amountInput) amountInput.placeholder = 'Enter amount to add';
+                        updatePreview();
+                    } else if (type === 'waive') {
+                        amountLabel.innerHTML = 'Confirm Waive';
+                        if (amountInput) {
+                            amountInput.value = currentBalance;
+                            amountInput.readOnly = true;
+                            amountInput.style.backgroundColor = '#f5f5f5';
+                        }
+                        sourceMembersDiv.style.display = 'none';
+                        updatePreview();
+                    }
+                }
+            });
+            
+            // Handle source type change
+            const radioButtons = document.querySelectorAll('input[name="sourceType"]');
+            radioButtons.forEach(radio => {
+                radio.addEventListener('change', () => {
+                    const memberList = document.getElementById('memberSelectionList');
+                    if (memberList) {
+                        memberList.style.display = radio.value === 'select' ? 'block' : 'none';
+                    }
+                    updatePreview();
+                });
+            });
+            
+            // Handle amount input
+            if (amountInput) {
+                amountInput.addEventListener('input', updatePreview);
+            }
+            
+            // Handle member checkbox changes
+            const checkboxes = document.querySelectorAll('.source-member-checkbox');
+            checkboxes.forEach(cb => {
+                cb.addEventListener('change', updatePreview);
+            });
+        }
     });
     
-    if (result.isConfirmed) {
-        // Apply adjustment to all selected members
-        for (const memberId of result.value.selectedMembers) {
-            await applyAdjustment(
-                activityId, 
-                memberId, 
-                result.value.amount, 
-                result.value.type, 
-                result.value.reason,
-                result.value.percentage
-            );
-        }
-        
-        // Show summary
-        const count = result.value.selectedMembers.length;
-        Swal.fire({
-            title: 'Adjustments Applied',
-            text: `Adjustment applied to ${count} member(s) successfully.`,
-            icon: 'success',
-            timer: 2000,
-            showConfirmButton: false
-        });
-        
-        await loadData();
-        await renderCurrentPage();
+    if (result.isConfirmed && isSingleMember) {
+        await applyAdvancedAdjustment(
+            activityId, 
+            memberId, 
+            result.value.amount, 
+            result.value.type, 
+            result.value.reason,
+            result.value.percentage,
+            result.value.sourceMembers,
+            otherMembers
+        );
     }
 }
 
@@ -516,28 +645,24 @@ function deselectAllMembers() {
 }
 
 
-async function applyAdjustment(activityId, memberId, amount, type, reason, percentage = null) {
+async function applyAdvancedAdjustment(activityId, memberId, amount, type, reason, percentage, sourceMembers, otherMembers) {
     if (_currentRole !== 'admin') {
         Swal.fire('Access Denied', 'Only administrators can make adjustments', 'error');
         return false;
     }
     
     const activity = _activities.find(a => a.id === activityId);
-    if (!activity) {
-        Swal.fire('Error', 'Activity not found', 'error');
-        return false;
-    }
+    const memberActivity = activity?.memberPayments?.find(mp => mp.member_id === memberId);
+    const member = _familyMembers.find(m => m.id === memberId);
     
-    const memberActivity = activity.memberPayments?.find(mp => mp.member_id === memberId);
     if (!memberActivity) {
         Swal.fire('Error', 'Member activity record not found', 'error');
         return false;
     }
     
-    const member = _familyMembers.find(m => m.id === memberId);
     let newAmountOwed = memberActivity.amount_owed;
     let adjustmentAmount = amount;
-    let redistributionAmount = 0;
+    let redistributionDetails = [];
     
     // Handle different adjustment types
     if (type === 'discount') {
@@ -554,134 +679,149 @@ async function applyAdjustment(activityId, memberId, amount, type, reason, perce
     } else if (type === 'decrease') {
         newAmountOwed = Math.max(0, memberActivity.amount_owed - amount);
         adjustmentAmount = memberActivity.amount_owed - newAmountOwed;
-        redistributionAmount = adjustmentAmount; // Amount to redistribute to others
     } else if (type === 'waive') {
         newAmountOwed = 0;
         adjustmentAmount = memberActivity.amount_owed;
-        redistributionAmount = adjustmentAmount; // Amount to redistribute to others
     }
     
-    // Get all other members (excluding the current member)
-    const otherMembers = activity.memberPayments?.filter(mp => mp.member_id !== memberId) || [];
-    const payingOtherMembers = otherMembers.filter(mp => mp.status !== 'exempt' && mp.amount_owed > 0);
+    // Update the current member's amount
+    const { error: updateError } = await _supabase
+        .from('member_activities')
+        .update({ 
+            amount_owed: newAmountOwed,
+            adjustment_amount: adjustmentAmount,
+            adjustment_reason: reason
+        })
+        .eq('activity_id', activityId)
+        .eq('member_id', memberId);
     
-    let redistributionMessage = '';
+    if (updateError) {
+        Swal.fire('Error', updateError.message, 'error');
+        return false;
+    }
     
-    // If decreasing or waiving, redistribute the amount to other paying members
-    if ((type === 'decrease' || type === 'waive') && redistributionAmount > 0 && payingOtherMembers.length > 0) {
-        const sharePerMember = redistributionAmount / payingOtherMembers.length;
-        
-        redistributionMessage = `<div style="margin-top: 10px; padding: 10px; background: #fff3e0; border-radius: 8px;">
-            <strong><i class="fas fa-chart-line"></i> Redistribution Details:</strong><br>
-            UGX ${redistributionAmount.toLocaleString()} will be redistributed to ${payingOtherMembers.length} other member(s).<br>
-            Each will receive an additional UGX ${sharePerMember.toLocaleString()}.
-        </div>`;
-        
-        // Show confirmation with redistribution details
-        const confirmResult = await Swal.fire({
-            title: 'Confirm Redistribution',
-            html: `
-                <div style="text-align: left;">
-                    <p><strong>Member:</strong> ${member?.name}</p>
-                    <p><strong>Change:</strong> ${type === 'decrease' ? 'Decrease by' : 'Waive'} UGX ${adjustmentAmount.toLocaleString()}</p>
-                    <p><strong>New Amount for ${member?.name}:</strong> UGX ${newAmountOwed.toLocaleString()}</p>
-                    ${redistributionMessage}
-                    <p style="margin-top: 10px;"><strong>⚠️ Note:</strong> This will increase other members' contributions.</p>
-                </div>
-            `,
-            icon: 'warning',
-            showCancelButton: true,
-            confirmButtonText: '✅ Confirm & Redistribute',
-            cancelButtonText: 'Cancel',
-            confirmButtonColor: '#e74c3c'
-        });
-        
-        if (!confirmResult.isConfirmed) {
-            return false;
+    // Handle redistribution for decrease OR source selection for increase
+    let redistributionAmount = 0;
+    let targetMembers = [];
+    
+    if (type === 'decrease' || type === 'waive') {
+        // DECREASE: Redistribute to all other paying members
+        redistributionAmount = adjustmentAmount;
+        targetMembers = otherMembers;
+    } else if (type === 'increase') {
+        // INCREASE: Deduct from selected members
+        redistributionAmount = adjustmentAmount;
+        if (sourceMembers === 'all') {
+            targetMembers = otherMembers;
+        } else if (Array.isArray(sourceMembers) && sourceMembers.length > 0) {
+            targetMembers = otherMembers.filter(om => sourceMembers.includes(om.member_id));
         }
+    }
+    
+    let redistributionLog = [];
+    
+    if (redistributionAmount > 0 && targetMembers.length > 0) {
+        const sharePerMember = redistributionAmount / targetMembers.length;
         
-        // Update the current member's amount
-        const { error: updateError } = await _supabase
-            .from('member_activities')
-            .update({ 
-                amount_owed: newAmountOwed,
-                adjustment_amount: adjustmentAmount,
-                adjustment_reason: reason
-            })
-            .eq('activity_id', activityId)
-            .eq('member_id', memberId);
-        
-        if (updateError) {
-            Swal.fire('Error', updateError.message, 'error');
-            return false;
-        }
-        
-        // Redistribute to other members
-        let redistributionLog = [];
-        for (const other of payingOtherMembers) {
-            const newOtherAmount = other.amount_owed + sharePerMember;
-            redistributionLog.push(`${other.family_members?.name}: UGX ${other.amount_owed.toLocaleString()} → UGX ${newOtherAmount.toLocaleString()}`);
+        for (const target of targetMembers) {
+            let newTargetAmount;
+            let changeDesc;
+            
+            if (type === 'decrease' || type === 'waive') {
+                // DECREASE: Add to other members
+                newTargetAmount = target.amount_owed + sharePerMember;
+                changeDesc = `+UGX ${sharePerMember.toLocaleString()}`;
+            } else {
+                // INCREASE: Subtract from selected members
+                newTargetAmount = Math.max(0, target.amount_owed - sharePerMember);
+                changeDesc = `-UGX ${sharePerMember.toLocaleString()}`;
+            }
+            
+            redistributionLog.push({
+                name: target.family_members?.name || 'Unknown',
+                oldAmount: target.amount_owed,
+                newAmount: newTargetAmount,
+                change: type === 'decrease' || type === 'waive' ? sharePerMember : -sharePerMember,
+                changeDesc: changeDesc
+            });
             
             await _supabase
                 .from('member_activities')
                 .update({ 
-                    amount_owed: newOtherAmount,
+                    amount_owed: newTargetAmount,
                     adjustment_amount: sharePerMember,
-                    adjustment_reason: `Received redistribution from ${member?.name}'s adjustment: ${reason}`
+                    adjustment_reason: type === 'decrease' || type === 'waive' 
+                        ? `Received redistribution from ${member?.name}'s adjustment: ${reason}`
+                        : `Deducted to increase ${member?.name}'s amount: ${reason}`
                 })
                 .eq('activity_id', activityId)
-                .eq('member_id', other.member_id);
+                .eq('member_id', target.member_id);
         }
         
-        // Show redistribution summary
+        // Show detailed summary
+        let summaryHtml = `
+            <div style="text-align: left;">
+                <p><strong>👤 Member:</strong> ${member?.name}</p>
+                <p><strong>💰 Change:</strong> ${type === 'increase' ? 'Increased by' : (type === 'waive' ? 'Waived' : 'Decreased by')} UGX ${adjustmentAmount.toLocaleString()}</p>
+                <p><strong>📊 New Amount:</strong> UGX ${newAmountOwed.toLocaleString()}</p>
+                <hr>
+                <p><strong>📤 ${type === 'increase' ? 'Deducted from' : 'Redistributed to'} ${targetMembers.length} member(s):</strong></p>
+                <table style="width: 100%; border-collapse: collapse; margin-top: 10px;">
+                    <thead>
+                        <tr style="background: #f0f0f0;">
+                            <th style="padding: 5px;">Member</th>
+                            <th style="padding: 5px;">Original</th>
+                            <th style="padding: 5px;">New</th>
+                            <th style="padding: 5px;">Change</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+        `;
+        
+        for (const log of redistributionLog) {
+            summaryHtml += `
+                <tr>
+                    <td style="padding: 5px;">${log.name}</div>
+                    <td style="padding: 5px;">UGX ${log.oldAmount.toLocaleString()}</div>
+                    <td style="padding: 5px;">UGX ${log.newAmount.toLocaleString()}</div>
+                    <td style="padding: 5px; color: ${log.change > 0 ? '#27ae60' : '#e74c3c'};">${log.changeDesc}</div>
+                </tr>
+            `;
+        }
+        
+        summaryHtml += `
+                    </tbody>
+                </table>
+            </div>
+        `;
+        
         await Swal.fire({
-            title: '✅ Redistribution Complete',
-            html: `
-                <div style="text-align: left;">
-                    <p><strong>${member?.name}'s amount reduced by:</strong> UGX ${adjustmentAmount.toLocaleString()}</p>
-                    <p><strong>Amount redistributed:</strong> UGX ${redistributionAmount.toLocaleString()}</p>
-                    <p><strong>Affected members:</strong> ${payingOtherMembers.length}</p>
-                    <div style="margin-top: 10px; max-height: 200px; overflow-y: auto; background: #f5f5f5; padding: 10px; border-radius: 8px;">
-                        <strong>Updated amounts:</strong><br>
-                        ${redistributionLog.join('<br>')}
-                    </div>
-                </div>
-            `,
+            title: type === 'increase' ? '✅ Increase & Deduction Complete' : '✅ Adjustment & Redistribution Complete',
+            html: summaryHtml,
             icon: 'success',
             confirmButtonText: 'OK'
         });
         
-    } 
-    // For increases, just update the single member
-    else {
-        const { error: updateError } = await _supabase
-            .from('member_activities')
-            .update({ 
-                amount_owed: newAmountOwed,
-                adjustment_amount: adjustmentAmount,
-                adjustment_reason: reason
-            })
-            .eq('activity_id', activityId)
-            .eq('member_id', memberId);
-        
-        if (updateError) {
-            Swal.fire('Error', updateError.message, 'error');
-            return false;
-        }
-        
+    } else if (redistributionAmount > 0 && targetMembers.length === 0) {
+        await Swal.fire({
+            title: '⚠️ Warning',
+            text: `No other members available to ${type === 'increase' ? 'deduct from' : 'redistribute to'}! Only the selected member was updated.`,
+            icon: 'warning',
+            confirmButtonText: 'OK'
+        });
+    } else {
         await Swal.fire({
             title: 'Adjustment Applied',
             html: `
                 <div style="text-align: left;">
-                    <p><strong>Member:</strong> ${member?.name}</p>
-                    <p><strong>Change:</strong> ${type === 'increase' ? 'Increased by' : 'Changed by'} UGX ${adjustmentAmount.toLocaleString()}</p>
-                    <p><strong>New Amount:</strong> UGX ${newAmountOwed.toLocaleString()}</p>
-                    <p><strong>Reason:</strong> ${reason}</p>
+                    <p><strong>👤 Member:</strong> ${member?.name}</p>
+                    <p><strong>💰 Change:</strong> ${type === 'increase' ? 'Increased by' : 'Changed by'} UGX ${adjustmentAmount.toLocaleString()}</p>
+                    <p><strong>📊 New Amount:</strong> UGX ${newAmountOwed.toLocaleString()}</p>
+                    <p><strong>📝 Reason:</strong> ${reason}</p>
                 </div>
             `,
             icon: 'success',
-            timer: 2000,
-            showConfirmButton: false
+            confirmButtonText: 'OK'
         });
     }
     
@@ -695,10 +835,9 @@ async function applyAdjustment(activityId, memberId, amount, type, reason, perce
         approved_by: _currentUser?.id || 0
     });
     
-    // Send notification
     addNotification(
         '💰 Adjustment Applied', 
-        `${member?.name}'s amount adjusted. ${redistributionAmount > 0 ? `UGX ${redistributionAmount.toLocaleString()} redistributed to others.` : ''}`,
+        `${member?.name}'s amount ${type === 'waive' ? 'waived' : 'adjusted'}. ${redistributionAmount > 0 ? `UGX ${redistributionAmount.toLocaleString()} ${type === 'increase' ? 'deducted from' : 'redistributed to'} ${targetMembers.length} others.` : ''}`,
         'warning'
     );
     
