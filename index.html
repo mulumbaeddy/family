@@ -14,12 +14,12 @@
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- PWA Meta Tags -->
-<link rel="manifest" href="manifest.json">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="OBUNANGWE">
-<link rel="apple-touch-icon" href="icons/icon-192.png">
-<meta name="theme-color" content="#01605a">
+    <link rel="manifest" href="manifest.json">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="OBUNANGWE">
+    <link rel="apple-touch-icon" href="icons/icon-192.png">
+    <meta name="theme-color" content="#01605a">
 </head>
 <body>
     <div id="loadingScreen" class="loading-screen">
@@ -169,7 +169,7 @@
         </div>
     </div>
 
-    <!-- Add Member Modal (Enhanced) -->
+    <!-- Add Member Modal (Enhanced with Position/Role) -->
     <div id="addMemberModal" class="modal">
         <div class="modal-content" style="max-width: 500px; max-height: 85vh; overflow-y: auto;">
             <div class="modal-header">
@@ -191,33 +191,40 @@
                     <label>Full Name *</label>
                     <input type="text" id="memberName" required>
                 </div>
+                
+                <!-- Position/Role Dropdown -->
                 <div class="form-group">
-                    <label>Member Type *</label>
-                    <select id="memberType" onchange="toggleMemberTypeFields()" required>
-                        <option value="board">🏛️ Board Member (Family Head)</option>
-                        <option value="parent">👨‍👩 Parent</option>
-                        <option value="child">🧒 Child (Self-Paying)</option>
-                        <option value="dependent">👶 Dependent (Non-Paying)</option>
+                    <label>Position / Role *</label>
+                    <select id="memberPositionId" onchange="onPositionChange('add')" required>
+                        <option value="">Select position...</option>
                     </select>
+                    <small class="form-hint">Determines payment responsibility and contribution amount</small>
                 </div>
-                <div class="form-group" id="boardPositionDiv" style="display:none;">
-                    <label>Board Position</label>
+                
+                <!-- Board Position field (shown only for board members) -->
+                <div class="form-group" id="addBoardPositionDiv" style="display:none;">
+                    <label>Board Position Title</label>
                     <select id="memberBoardPosition">
                         <option value="">Select Position</option>
-                        <option value="chairperson">Chairperson</option>
-                        <option value="vice_chairperson">Vice Chairperson</option>
-                        <option value="treasurer">Treasurer</option>
-                        <option value="secretary">Secretary</option>
-                        <option value="member">Board Member</option>
+                        <option value="Chairperson">Chairperson</option>
+                        <option value="Vice Chairperson">Vice Chairperson</option>
+                        <option value="Treasurer">Treasurer</option>
+                        <option value="Secretary">Secretary</option>
+                        <option value="Board Member">Board Member</option>
+                        <option value="Elder">Family Elder</option>
+                        <option value="Advisor">Family Advisor</option>
                     </select>
                 </div>
-                <div class="form-group" id="parentSelectDiv" style="display:none;">
+                
+                <!-- Parent/Guardian select (shown only for dependents) -->
+                <div class="form-group" id="addParentSelectDiv" style="display:none;">
                     <label>Responsible Parent/Guardian</label>
                     <select id="memberParentId">
                         <option value="">Select parent/guardian</option>
                     </select>
                     <small class="form-hint">This person will be responsible for this member's payments</small>
                 </div>
+                
                 <div class="form-group">
                     <label>Phone Number</label>
                     <input type="tel" id="memberPhone" placeholder="e.g., +256 XXX XXX XXX">
@@ -288,7 +295,7 @@
         </div>
     </div>
 
-    <!-- Edit Member Modal (Enhanced) -->
+    <!-- Edit Member Modal (Enhanced with Position/Role) -->
     <div id="editMemberModal" class="modal">
         <div class="modal-content" style="max-width: 500px; max-height: 85vh; overflow-y: auto;">
             <div class="modal-header">
@@ -311,32 +318,39 @@
                     <label>Full Name *</label>
                     <input type="text" id="editMemberName" required>
                 </div>
+                
+                <!-- Position/Role Dropdown -->
                 <div class="form-group">
-                    <label>Member Type *</label>
-                    <select id="editMemberType" onchange="toggleEditMemberTypeFields()" required>
-                        <option value="board">🏛️ Board Member</option>
-                        <option value="parent">👨‍👩 Parent</option>
-                        <option value="child">🧒 Child (Self-Paying)</option>
-                        <option value="dependent">👶 Dependent (Non-Paying)</option>
+                    <label>Position / Role *</label>
+                    <select id="editMemberPositionId" onchange="onPositionChange('edit')" required>
+                        <option value="">Select position...</option>
                     </select>
+                    <small class="form-hint">Determines payment responsibility and contribution amount</small>
                 </div>
+                
+                <!-- Board Position field (shown only for board members) -->
                 <div class="form-group" id="editBoardPositionDiv" style="display:none;">
-                    <label>Board Position</label>
+                    <label>Board Position Title</label>
                     <select id="editMemberBoardPosition">
                         <option value="">Select Position</option>
-                        <option value="chairperson">Chairperson</option>
-                        <option value="vice_chairperson">Vice Chairperson</option>
-                        <option value="treasurer">Treasurer</option>
-                        <option value="secretary">Secretary</option>
-                        <option value="member">Board Member</option>
+                        <option value="Chairperson">Chairperson</option>
+                        <option value="Vice Chairperson">Vice Chairperson</option>
+                        <option value="Treasurer">Treasurer</option>
+                        <option value="Secretary">Secretary</option>
+                        <option value="Board Member">Board Member</option>
+                        <option value="Elder">Family Elder</option>
+                        <option value="Advisor">Family Advisor</option>
                     </select>
                 </div>
+                
+                <!-- Parent/Guardian select (shown only for dependents) -->
                 <div class="form-group" id="editParentSelectDiv" style="display:none;">
                     <label>Responsible Parent/Guardian</label>
                     <select id="editMemberParentId">
                         <option value="">Select parent/guardian</option>
                     </select>
                 </div>
+                
                 <div class="form-group">
                     <label>Phone Number</label>
                     <input type="tel" id="editMemberPhone">
@@ -500,13 +514,12 @@
                 <button class="close-modal" onclick="closeModal('activityDetailsModal')">&times;</button>
             </div>
             <div id="activityDetailsContent"></div>
+            <div style="margin-top: 15px; display: flex; gap: 10px; justify-content: flex-end;">
+                <button class="btn-whatsapp" onclick="manuallyCompleteActivity(currentActivityId)" style="background: var(--warning);">
+                    <i class="fas fa-check-circle"></i> Complete Activity & Waive Balances
+                </button>
+            </div>
         </div>
-        <!-- In the activityDetailsModal, add a Complete button -->
-<div style="margin-top: 15px; display: flex; gap: 10px; justify-content: flex-end;">
-    <button class="btn-whatsapp" onclick="manuallyCompleteActivity(currentActivityId)" style="background: var(--warning);">
-        <i class="fas fa-check-circle"></i> Complete Activity & Waive Balances
-    </button>
-</div>
     </div>
 
     <!-- Member Details Modal -->
@@ -532,6 +545,51 @@
             </div>
             <div id="notificationsList">
                 <p style="text-align: center; color: #999;">No notifications</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Manage Positions Modal -->
+    <div id="managePositionsModal" class="modal">
+        <div class="modal-content" style="max-width: 600px;">
+            <div class="modal-header">
+                <h3><i class="fas fa-tags"></i> Manage Member Positions</h3>
+                <button class="close-modal" onclick="closeModal('managePositionsModal')">&times;</button>
+            </div>
+            <div id="positionsList"></div>
+            <div style="margin-top: 20px;">
+                <h4>Add New Position</h4>
+                <div class="form-group">
+                    <label>Position Name</label>
+                    <input type="text" id="newPositionName" placeholder="e.g., Family Elder, Advisor">
+                </div>
+                <div class="form-group">
+                    <label>Category</label>
+                    <select id="newPositionCategory">
+                        <option value="board">Board (Leadership - Pays double)</option>
+                        <option value="parent">Parent (Pays regular share)</option>
+                        <option value="regular">Regular (Pays standard)</option>
+                        <option value="dependent">Dependent (Non-paying)</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label><input type="checkbox" id="newPositionCanPay" checked> Can Pay</label>
+                </div>
+                <div class="form-group">
+                    <label>Payment Multiplier</label>
+                    <select id="newPositionMultiplier">
+                        <option value="0">0x (No payment)</option>
+                        <option value="0.5">0.5x (Half share)</option>
+                        <option value="0.75">0.75x (Three-quarter share)</option>
+                        <option value="1" selected>1x (Standard share)</option>
+                        <option value="1.5">1.5x (One and half share)</option>
+                        <option value="2">2x (Double share)</option>
+                        <option value="3">3x (Triple share)</option>
+                    </select>
+                </div>
+                <button class="btn-primary" onclick="addNewPosition()" style="width: 100%;">
+                    <i class="fas fa-plus"></i> Add Position
+                </button>
             </div>
         </div>
     </div>
