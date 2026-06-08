@@ -514,64 +514,199 @@ function deselectAllMembers() {
     const checkboxes = document.querySelectorAll('.member-select-checkbox');
     checkboxes.forEach(cb => cb.checked = false);
 }
-async function applyAdjustment(activityId, memberId, amount, type, reason) {
+
+
+async function applyAdjustment(activityId, memberId, amount, type, reason, percentage = null) {
     if (_currentRole !== 'admin') {
         Swal.fire('Access Denied', 'Only administrators can make adjustments', 'error');
         return false;
     }
     
-    const memberActivity = _activities
-        .find(a => a.id === activityId)
-        ?.memberPayments?.find(mp => mp.member_id === memberId);
+    const activity = _activities.find(a => a.id === activityId);
+    if (!activity) {
+        Swal.fire('Error', 'Activity not found', 'error');
+        return false;
+    }
     
+    const memberActivity = activity.memberPayments?.find(mp => mp.member_id === memberId);
     if (!memberActivity) {
         Swal.fire('Error', 'Member activity record not found', 'error');
         return false;
     }
     
+    const member = _familyMembers.find(m => m.id === memberId);
     let newAmountOwed = memberActivity.amount_owed;
+    let adjustmentAmount = amount;
+    let redistributionAmount = 0;
     
-    if (type === 'increase') {
-        newAmountOwed += amount;
+    // Handle different adjustment types
+    if (type === 'discount') {
+        adjustmentAmount = (memberActivity.amount_owed * percentage) / 100;
+        newAmountOwed = memberActivity.amount_owed - adjustmentAmount;
+        type = 'decrease';
+    } else if (type === 'penalty') {
+        adjustmentAmount = (memberActivity.amount_owed * percentage) / 100;
+        newAmountOwed = memberActivity.amount_owed + adjustmentAmount;
+        type = 'increase';
+    } else if (type === 'increase') {
+        newAmountOwed = memberActivity.amount_owed + amount;
+        adjustmentAmount = amount;
     } else if (type === 'decrease') {
-        newAmountOwed = Math.max(0, newAmountOwed - amount);
+        newAmountOwed = Math.max(0, memberActivity.amount_owed - amount);
+        adjustmentAmount = memberActivity.amount_owed - newAmountOwed;
+        redistributionAmount = adjustmentAmount; // Amount to redistribute to others
     } else if (type === 'waive') {
         newAmountOwed = 0;
+        adjustmentAmount = memberActivity.amount_owed;
+        redistributionAmount = adjustmentAmount; // Amount to redistribute to others
     }
     
-    const { error } = await _supabase
-        .from('member_activities')
-        .update({ 
-            amount_owed: newAmountOwed,
-            adjustment_amount: amount,
-            adjustment_reason: reason
-        })
-        .eq('activity_id', activityId)
-        .eq('member_id', memberId);
+    // Get all other members (excluding the current member)
+    const otherMembers = activity.memberPayments?.filter(mp => mp.member_id !== memberId) || [];
+    const payingOtherMembers = otherMembers.filter(mp => mp.status !== 'exempt' && mp.amount_owed > 0);
     
-    if (error) {
-        Swal.fire('Error', error.message, 'error');
-        return false;
+    let redistributionMessage = '';
+    
+    // If decreasing or waiving, redistribute the amount to other paying members
+    if ((type === 'decrease' || type === 'waive') && redistributionAmount > 0 && payingOtherMembers.length > 0) {
+        const sharePerMember = redistributionAmount / payingOtherMembers.length;
+        
+        redistributionMessage = `<div style="margin-top: 10px; padding: 10px; background: #fff3e0; border-radius: 8px;">
+            <strong><i class="fas fa-chart-line"></i> Redistribution Details:</strong><br>
+            UGX ${redistributionAmount.toLocaleString()} will be redistributed to ${payingOtherMembers.length} other member(s).<br>
+            Each will receive an additional UGX ${sharePerMember.toLocaleString()}.
+        </div>`;
+        
+        // Show confirmation with redistribution details
+        const confirmResult = await Swal.fire({
+            title: 'Confirm Redistribution',
+            html: `
+                <div style="text-align: left;">
+                    <p><strong>Member:</strong> ${member?.name}</p>
+                    <p><strong>Change:</strong> ${type === 'decrease' ? 'Decrease by' : 'Waive'} UGX ${adjustmentAmount.toLocaleString()}</p>
+                    <p><strong>New Amount for ${member?.name}:</strong> UGX ${newAmountOwed.toLocaleString()}</p>
+                    ${redistributionMessage}
+                    <p style="margin-top: 10px;"><strong>⚠️ Note:</strong> This will increase other members' contributions.</p>
+                </div>
+            `,
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonText: '✅ Confirm & Redistribute',
+            cancelButtonText: 'Cancel',
+            confirmButtonColor: '#e74c3c'
+        });
+        
+        if (!confirmResult.isConfirmed) {
+            return false;
+        }
+        
+        // Update the current member's amount
+        const { error: updateError } = await _supabase
+            .from('member_activities')
+            .update({ 
+                amount_owed: newAmountOwed,
+                adjustment_amount: adjustmentAmount,
+                adjustment_reason: reason
+            })
+            .eq('activity_id', activityId)
+            .eq('member_id', memberId);
+        
+        if (updateError) {
+            Swal.fire('Error', updateError.message, 'error');
+            return false;
+        }
+        
+        // Redistribute to other members
+        let redistributionLog = [];
+        for (const other of payingOtherMembers) {
+            const newOtherAmount = other.amount_owed + sharePerMember;
+            redistributionLog.push(`${other.family_members?.name}: UGX ${other.amount_owed.toLocaleString()} → UGX ${newOtherAmount.toLocaleString()}`);
+            
+            await _supabase
+                .from('member_activities')
+                .update({ 
+                    amount_owed: newOtherAmount,
+                    adjustment_amount: sharePerMember,
+                    adjustment_reason: `Received redistribution from ${member?.name}'s adjustment: ${reason}`
+                })
+                .eq('activity_id', activityId)
+                .eq('member_id', other.member_id);
+        }
+        
+        // Show redistribution summary
+        await Swal.fire({
+            title: '✅ Redistribution Complete',
+            html: `
+                <div style="text-align: left;">
+                    <p><strong>${member?.name}'s amount reduced by:</strong> UGX ${adjustmentAmount.toLocaleString()}</p>
+                    <p><strong>Amount redistributed:</strong> UGX ${redistributionAmount.toLocaleString()}</p>
+                    <p><strong>Affected members:</strong> ${payingOtherMembers.length}</p>
+                    <div style="margin-top: 10px; max-height: 200px; overflow-y: auto; background: #f5f5f5; padding: 10px; border-radius: 8px;">
+                        <strong>Updated amounts:</strong><br>
+                        ${redistributionLog.join('<br>')}
+                    </div>
+                </div>
+            `,
+            icon: 'success',
+            confirmButtonText: 'OK'
+        });
+        
+    } 
+    // For increases, just update the single member
+    else {
+        const { error: updateError } = await _supabase
+            .from('member_activities')
+            .update({ 
+                amount_owed: newAmountOwed,
+                adjustment_amount: adjustmentAmount,
+                adjustment_reason: reason
+            })
+            .eq('activity_id', activityId)
+            .eq('member_id', memberId);
+        
+        if (updateError) {
+            Swal.fire('Error', updateError.message, 'error');
+            return false;
+        }
+        
+        await Swal.fire({
+            title: 'Adjustment Applied',
+            html: `
+                <div style="text-align: left;">
+                    <p><strong>Member:</strong> ${member?.name}</p>
+                    <p><strong>Change:</strong> ${type === 'increase' ? 'Increased by' : 'Changed by'} UGX ${adjustmentAmount.toLocaleString()}</p>
+                    <p><strong>New Amount:</strong> UGX ${newAmountOwed.toLocaleString()}</p>
+                    <p><strong>Reason:</strong> ${reason}</p>
+                </div>
+            `,
+            icon: 'success',
+            timer: 2000,
+            showConfirmButton: false
+        });
     }
     
     // Record adjustment in payment_adjustments table
     await _supabase.from('payment_adjustments').insert({
         member_id: memberId,
         activity_id: activityId,
-        adjustment_amount: amount,
+        adjustment_amount: adjustmentAmount,
         adjustment_type: type,
         reason: reason,
         approved_by: _currentUser?.id || 0
     });
     
+    // Send notification
+    addNotification(
+        '💰 Adjustment Applied', 
+        `${member?.name}'s amount adjusted. ${redistributionAmount > 0 ? `UGX ${redistributionAmount.toLocaleString()} redistributed to others.` : ''}`,
+        'warning'
+    );
+    
     await loadData();
     await renderCurrentPage();
     
-    queueToast('💰 Adjustment Applied', `Amount adjusted by UGX ${amount.toLocaleString()} (${type})`, 'warning', 4000);
-    Swal.fire('Success!', 'Payment adjustment has been applied.', 'success');
     return true;
 }
-
 // ============================================
 // DELETE PAYMENT FUNCTION
 // ============================================
