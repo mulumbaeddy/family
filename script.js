@@ -4587,7 +4587,7 @@ async function loadAndDisplayPositions() {
     const positions = _memberPositions;
     
     if (!positions || positions.length === 0) {
-        container.innerHTML = '<p style="text-align:center; color:#999;">No positions defined. Add your first position above.</p>';
+        container.innerHTML = '<div style="text-align:center; padding: 30px; color: #999; background: #f8f9fa; border-radius: 12px;">No positions defined. Add your first position above.</div>';
         return;
     }
     
@@ -4608,7 +4608,7 @@ async function loadAndDisplayPositions() {
     
     const paymentCategoryLabels = {
         payer: '<span style="color: #27ae60;">✅ Payer</span>',
-        partial_payer: '<span style="color: #f39c12;">⚠️ Partial Payer</span>',
+        partial_payer: '<span style="color: #f39c12;">⚠️ Partial</span>',
         non_payer: '<span style="color: #e74c3c;">❌ Non-Payer</span>'
     };
     
@@ -4619,50 +4619,41 @@ async function loadAndDisplayPositions() {
         
         html += `
             <div style="margin-bottom: 25px;">
-                <h4 style="color: var(--primary-teal); margin-bottom: 10px; padding-bottom: 5px; border-bottom: 2px solid var(--primary-orange);">
+                <h4 style="color: var(--primary-teal); margin-bottom: 12px; padding-bottom: 5px; border-bottom: 2px solid var(--primary-orange); font-size: 15px;">
                     ${categoryNames[category]}
                 </h4>
-                <div style="background: var(--gray-50); border-radius: 10px; overflow: hidden;">
-                    <table style="width: 100%; border-collapse: collapse;">
-                        <thead>
-                            <tr style="background: var(--gray-200);">
-                                <th style="padding: 10px; text-align: left;">Position</th>
-                                <th style="padding: 10px; text-align: center;">Payment Status</th>
-                                <th style="padding: 10px; text-align: center;">Weight</th>
-                                <th style="padding: 10px; text-align: left;">Description</th>
-                                <th style="padding: 10px; text-align: center;">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
+                <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px;">
         `;
         
         for (const pos of categoryPositions) {
             const paymentLabel = paymentCategoryLabels[pos.payment_category] || 'Payer';
             html += `
-                <tr style="border-bottom: 1px solid var(--gray-200);">
-                    <td style="padding: 10px;">
-                        <strong>${escapeHtml(pos.position_name)}</strong>
-                     </div>
-                    <td style="padding: 10px; text-align: center;">${paymentLabel}</div>
-                    <td style="padding: 10px; text-align: center;">
-                        <span style="background: var(--primary-gradient); color: white; padding: 2px 8px; border-radius: 15px; font-size: 12px;">${pos.contribution_weight}x</span>
+                <div style="background: var(--gray-50); border-radius: 12px; padding: 12px; border: 1px solid var(--gray-200);">
+                    <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 8px; margin-bottom: 8px;">
+                        <div>
+                            <strong style="font-size: 14px;">${escapeHtml(pos.position_name)}</strong>
+                            <div style="font-size: 11px; color: #666; margin-top: 2px;">${pos.description || '—'}</div>
+                        </div>
+                        <div style="background: var(--primary-gradient); color: white; padding: 2px 10px; border-radius: 20px; font-size: 12px; font-weight: 600;">
+                            ${pos.contribution_weight}x
+                        </div>
                     </div>
-                    <td style="padding: 10px; font-size: 12px; color: #666;">${escapeHtml(pos.description) || '—'}</div>
-                    <td style="padding: 10px; text-align: center;">
-                        <button class="btn-edit" onclick="editPosition(${pos.id})" style="margin-right: 5px; padding: 4px 8px;">
-                            <i class="fas fa-edit"></i> Edit
-                        </button>
-                        <button class="btn-danger" onclick="deletePosition(${pos.id}, '${escapeHtml(pos.position_name)}')" style="padding: 4px 8px;">
-                            <i class="fas fa-trash"></i>
-                        </button>
+                    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 8px;">
+                        <div style="font-size: 12px;">${paymentLabel}</div>
+                        <div style="display: flex; gap: 6px;">
+                            <button class="btn-edit" onclick="editPosition(${pos.id})" style="padding: 4px 10px; font-size: 11px;">
+                                <i class="fas fa-edit"></i> Edit
+                            </button>
+                            <button class="btn-danger" onclick="deletePosition(${pos.id}, '${escapeHtml(pos.position_name)}')" style="padding: 4px 10px; font-size: 11px;">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        </div>
                     </div>
-                </tr>
+                </div>
             `;
         }
         
         html += `
-                        </tbody>
-                    </tr>
                 </div>
             </div>
         `;
@@ -4670,7 +4661,6 @@ async function loadAndDisplayPositions() {
     
     container.innerHTML = html;
 }
-
 // Edit position
 async function editPosition(positionId) {
     const positions = await getMemberPositions();
