@@ -16,6 +16,8 @@ let _shareMessage = '';
 let _activities = [];
 let _familyMembers = [];
 let _realtimeSubscription = null;
+let _memberPositions = [];  // ADD THIS LINE
+
 
 // ============================================
 // TOAST NOTIFICATION SYSTEM
@@ -95,9 +97,14 @@ function processToastQueue() {
 })();
 
 async function loadData() {
+    // Load positions first
+    await loadMemberPositions();
+    
+    // Load members
     const { data: members } = await _supabase.from('family_members').select('*');
     if (members) _familyMembers = members;
     
+    // Load activities
     const { data: acts } = await _supabase.from('activities').select('*');
     if (acts) {
         _activities = [];
@@ -118,10 +125,16 @@ async function loadData() {
         }
     }
     
+    // Populate user select dropdown for login
     const select = document.getElementById('userSelect');
     if (select && _familyMembers.length) {
         select.innerHTML = '<option value="">Select your name...</option>' + 
-            _familyMembers.map(m => `<option value="${m.id}">${m.name} (${m.member_type === 'board' ? 'Board Member' : (m.member_type === 'parent' ? 'Parent' : 'Child')})</option>`).join('');
+            _familyMembers.map(m => `<option value="${m.id}">${m.name}</option>`).join('');
+    }
+    
+    // Populate position dropdowns if modals are open or will be opened
+    if (document.getElementById('addMemberModal') && document.getElementById('addMemberModal').style.display === 'flex') {
+        await populatePositionDropdowns();
     }
 }
 
@@ -300,65 +313,207 @@ function getPayingMembers() {
 // ============================================
 // ADJUSTMENT FUNCTIONS
 // ============================================
-async function openAdjustmentModal(activityId, memberId) {
+async function openAdjustmentModal(activityId, memberId = null) {
     const activity = _activities.find(a => a.id === activityId);
-    const member = _familyMembers.find(m => m.id === memberId);
-    const memberActivity = activity?.memberPayments?.find(mp => mp.member_id === memberId);
+    if (!activity) return;
     
-    if (!activity || !member) return;
+    const members = await getFamilyMembers();
+    const memberActivities = activity.memberPayments || [];
+    
+    // If memberId is provided, we're adjusting for a single member
+    // Otherwise, we can select multiple members
+    const isSingleMember = memberId !== null;
+    
+    let memberSelectHtml = '';
+    if (!isSingleMember) {
+        // Build member selection checkboxes
+        memberSelectHtml = `
+            <div class="form-group">
+                <label>Select Members to Adjust</label>
+                <div style="max-height: 200px; overflow-y: auto; border: 1px solid #ddd; border-radius: 8px; padding: 10px;">
+                    ${members.map(m => {
+                        const memberActivity = memberActivities.find(ma => ma.member_id === m.id);
+                        const balance = (memberActivity?.amount_owed || 0) - (memberActivity?.amount_paid || 0);
+                        if (balance <= 0 && memberActivity?.status !== 'exempt') return ''; // Skip settled members
+                        return `
+                            <label style="display: flex; align-items: center; padding: 8px; margin: 0; cursor: pointer; border-bottom: 1px solid #f0f0f0;">
+                                <input type="checkbox" class="member-select-checkbox" value="${m.id}" style="margin-right: 12px;">
+                                <div style="flex: 1;">
+                                    <strong>${m.name}</strong>
+                                    <span style="font-size: 11px; color: #666; margin-left: 8px;">${m.member_type}</span>
+                                    <div style="font-size: 11px;">
+                                        Owed: UGX ${(memberActivity?.amount_owed || 0).toLocaleString()} | 
+                                        Paid: UGX ${(memberActivity?.amount_paid || 0).toLocaleString()} | 
+                                        Balance: UGX ${balance.toLocaleString()}
+                                    </div>
+                                </div>
+                            </label>
+                        `;
+                    }).join('')}
+                </div>
+                <div style="margin-top: 8px;">
+                    <button type="button" class="btn-edit" onclick="selectAllMembers()" style="margin-right: 5px; padding: 4px 8px;">Select All</button>
+                    <button type="button" class="btn-edit" onclick="deselectAllMembers()" style="padding: 4px 8px;">Deselect All</button>
+                </div>
+            </div>
+        `;
+    }
+    
+    // Get the member name if single member
+    let memberName = '';
+    let currentBalance = 0;
+    if (isSingleMember) {
+        const member = members.find(m => m.id === memberId);
+        const memberActivity = memberActivities.find(ma => ma.member_id === memberId);
+        memberName = member?.name || 'Unknown';
+        currentBalance = (memberActivity?.amount_owed || 0) - (memberActivity?.amount_paid || 0);
+    }
     
     const result = await Swal.fire({
-        title: `Adjust Payment for ${member.name}`,
+        title: isSingleMember ? `Adjust Payment for ${memberName}` : 'Adjust Payments - Select Members',
         html: `
             <div style="text-align: left;">
-                <p><strong>Activity:</strong> ${activity.name}</p>
-                <p><strong>Current Amount Owed:</strong> UGX ${(memberActivity?.amount_owed || 0).toLocaleString()}</p>
-                <p><strong>Current Amount Paid:</strong> UGX ${(memberActivity?.amount_paid || 0).toLocaleString()}</p>
-                <hr>
-                <div class="form-group">
+                <div style="background: var(--primary-light); padding: 12px; border-radius: 8px; margin-bottom: 15px;">
+                    <p style="margin: 0;"><strong>Activity:</strong> ${activity.name}</p>
+                    <p style="margin: 5px 0 0;"><strong>Total Budget:</strong> UGX ${activity.totalBudget.toLocaleString()}</p>
+                    ${isSingleMember ? `<p style="margin: 5px 0 0;"><strong>Current Balance:</strong> UGX ${currentBalance.toLocaleString()}</p>` : ''}
+                </div>
+                
+                ${memberSelectHtml}
+                
+                <div class="form-group" style="margin-top: 15px;">
                     <label>Adjustment Amount (UGX)</label>
                     <input type="number" id="adjustmentAmount" class="swal2-input" placeholder="Enter adjustment amount" style="width: 100%;">
                 </div>
+                
                 <div class="form-group">
                     <label>Adjustment Type</label>
-                    <select id="adjustmentType" class="swal2-select" style="width: 100%;">
+                    <select id="adjustmentType" class="swal2-select" style="width: 100%;" onchange="toggleAdjustmentReasonRequired()">
                         <option value="increase">Increase Amount Owed (+)</option>
                         <option value="decrease">Decrease Amount Owed (-)</option>
-                        <option value="waive">Waive/Remove Amount</option>
+                        <option value="waive">Waive/Remove Amount (Set to zero)</option>
+                        <option value="discount">Apply Discount (%)</option>
+                        <option value="penalty">Add Penalty (%)</option>
                     </select>
                 </div>
+                
+                <div class="form-group" id="percentageDiv" style="display: none;">
+                    <label>Percentage (%)</label>
+                    <input type="number" id="adjustmentPercentage" class="swal2-input" placeholder="Enter percentage" style="width: 100%;">
+                </div>
+                
                 <div class="form-group">
                     <label>Reason for Adjustment</label>
-                    <textarea id="adjustmentReason" class="swal2-textarea" rows="3" placeholder="e.g., Special consideration, discount, extra contribution..."></textarea>
+                    <textarea id="adjustmentReason" class="swal2-textarea" rows="3" placeholder="e.g., Special consideration, discount, penalty, correction..."></textarea>
                 </div>
             </div>
         `,
         focusConfirm: false,
         preConfirm: () => {
-            const amount = parseFloat(document.getElementById('adjustmentAmount').value);
-            const type = document.getElementById('adjustmentType').value;
-            const reason = document.getElementById('adjustmentReason').value;
+            const amount = parseFloat(document.getElementById('adjustmentAmount')?.value);
+            const type = document.getElementById('adjustmentType')?.value;
+            const reason = document.getElementById('adjustmentReason')?.value;
+            const percentage = parseFloat(document.getElementById('adjustmentPercentage')?.value);
             
-            if (isNaN(amount) || amount <= 0) {
-                Swal.showValidationMessage('Please enter a valid amount');
+            // Get selected members
+            let selectedMembers = [];
+            if (isSingleMember) {
+                selectedMembers = [memberId];
+            } else {
+                const checkboxes = document.querySelectorAll('.member-select-checkbox:checked');
+                selectedMembers = Array.from(checkboxes).map(cb => parseInt(cb.value));
+            }
+            
+            if (selectedMembers.length === 0) {
+                Swal.showValidationMessage('Please select at least one member');
                 return false;
             }
+            
+            if (type !== 'discount' && type !== 'penalty') {
+                if (isNaN(amount) || amount <= 0) {
+                    Swal.showValidationMessage('Please enter a valid amount');
+                    return false;
+                }
+            }
+            
+            if (type === 'discount' || type === 'penalty') {
+                if (isNaN(percentage) || percentage <= 0 || percentage > 100) {
+                    Swal.showValidationMessage('Please enter a valid percentage (1-100)');
+                    return false;
+                }
+            }
+            
             if (!reason) {
                 Swal.showValidationMessage('Please provide a reason for the adjustment');
                 return false;
             }
-            return { amount, type, reason };
+            
+            return { 
+                selectedMembers, 
+                amount, 
+                type, 
+                reason,
+                percentage,
+                isSingleMember 
+            };
         },
         showCancelButton: true,
         confirmButtonText: 'Apply Adjustment',
-        cancelButtonText: 'Cancel'
+        cancelButtonText: 'Cancel',
+        width: '600px'
     });
     
     if (result.isConfirmed) {
-        await applyAdjustment(activityId, memberId, result.value.amount, result.value.type, result.value.reason);
+        // Apply adjustment to all selected members
+        for (const memberId of result.value.selectedMembers) {
+            await applyAdjustment(
+                activityId, 
+                memberId, 
+                result.value.amount, 
+                result.value.type, 
+                result.value.reason,
+                result.value.percentage
+            );
+        }
+        
+        // Show summary
+        const count = result.value.selectedMembers.length;
+        Swal.fire({
+            title: 'Adjustments Applied',
+            text: `Adjustment applied to ${count} member(s) successfully.`,
+            icon: 'success',
+            timer: 2000,
+            showConfirmButton: false
+        });
+        
+        await loadData();
+        await renderCurrentPage();
     }
 }
 
+// Toggle percentage input visibility
+function toggleAdjustmentReasonRequired() {
+    const type = document.getElementById('adjustmentType')?.value;
+    const percentageDiv = document.getElementById('percentageDiv');
+    
+    if (type === 'discount' || type === 'penalty') {
+        if (percentageDiv) percentageDiv.style.display = 'block';
+    } else {
+        if (percentageDiv) percentageDiv.style.display = 'none';
+    }
+}
+
+// Select all members
+function selectAllMembers() {
+    const checkboxes = document.querySelectorAll('.member-select-checkbox');
+    checkboxes.forEach(cb => cb.checked = true);
+}
+
+// Deselect all members
+function deselectAllMembers() {
+    const checkboxes = document.querySelectorAll('.member-select-checkbox');
+    checkboxes.forEach(cb => cb.checked = false);
+}
 async function applyAdjustment(activityId, memberId, amount, type, reason) {
     if (_currentRole !== 'admin') {
         Swal.fire('Access Denied', 'Only administrators can make adjustments', 'error');
@@ -513,176 +668,79 @@ async function deletePayment(paymentId) {
 // ============================================
 // CRUD OPERATIONS
 // ============================================
-async function createActivity(name, desc, budget, dueDate) {
-    if (_currentRole !== 'admin') { 
-        Swal.fire('Access Denied', 'Only administrators can create activities', 'error'); 
-        return false; 
-    }
-    
-    const members = await getFamilyMembers();
-    if (members.length === 0) {
-        Swal.fire('Error', 'No family members found. Please add members first.', 'error');
-        return false;
-    }
-    
-    // Get ONLY paying members (board members and parents, NOT dependents)
-    const payingMembers = members.filter(m => m.member_type === 'board' || m.member_type === 'parent');
-    const numberOfPayers = payingMembers.length;
-    
-    if (numberOfPayers === 0) {
-        Swal.fire('Error', 'No paying members found. Please add at least one parent or board member.', 'error');
-        return false;
-    }
-    
-    const { data: activity, error } = await _supabase
-        .from('activities')
-        .insert({ name, description: desc, total_budget: parseFloat(budget), expected_completion_date: dueDate, status: 'active' })
-        .select();
-    
-    if (error) { Swal.fire('Error', error.message, 'error'); return false; }
-    
-    const activityId = activity[0].id;
-    const amountPerPayer = parseFloat(budget) / numberOfPayers;
-    
-    // For each paying member, create a member_activity record
-    for (const payer of payingMembers) {
-        // Find all dependents under this payer (including themselves)
-        const dependents = members.filter(m => {
-            const responsible = getPaymentResponsibleMember(m);
-            return responsible && responsible.id === payer.id;
-        });
-        
-        // If no dependents, just the payer themselves
-        if (dependents.length === 0) {
-            await _supabase.from('member_activities').insert({
-                activity_id: activityId,
-                member_id: payer.id,
-                amount_owed: amountPerPayer,
-                amount_paid: 0,
-                status: 'unpaid'
-            });
-        } else {
-            // Split the payer's share among all dependents (including payer)
-            const sharePerDependent = amountPerPayer / dependents.length;
-            for (const dependent of dependents) {
-                await _supabase.from('member_activities').insert({
-                    activity_id: activityId,
-                    member_id: dependent.id,
-                    amount_owed: sharePerDependent,
-                    amount_paid: 0,
-                    status: 'unpaid'
-                });
-            }
-        }
-    }
-    
-    await loadData();
-    
-    let message = `✅ "${name}" created. `;
-    for (const payer of payingMembers) {
-        const dependents = members.filter(m => {
-            const responsible = getPaymentResponsibleMember(m);
-            return responsible && responsible.id === payer.id;
-        });
-        message += `${payer.name}: UGX ${amountPerPayer.toLocaleString()} `;
-    }
-    
-    queueToast('✅ Activity Created', message, 'success', 6000);
-    Swal.fire('Success!', `Activity "${name}" created successfully.`, 'success');
-    return true;
-}
-
-async function updateActivity(id, name, desc, budget, dueDate, status) {
-    if (_currentRole !== 'admin') { 
-        Swal.fire('Access Denied', 'Only administrators can edit activities', 'error'); 
-        return false; 
-    }
-    
-    const oldActivity = _activities.find(a => a.id === id);
-    const { error } = await _supabase
-        .from('activities')
-        .update({ name, description: desc, total_budget: parseFloat(budget), expected_completion_date: dueDate, status })
-        .eq('id', id);
-    
-    if (error) { Swal.fire('Error', error.message, 'error'); return false; }
-    
-    if (status === 'completed' && oldActivity?.status !== 'completed') {
-        queueToast('🎉 Activity Completed!', `"${name}" has been completed. Great teamwork!`, 'success', 6000);
-    }
-    
-    await recalculateActivityShares(id, parseFloat(budget));
-    await loadData();
-    await renderCurrentPage();
-    Swal.fire('Updated!', 'Activity updated successfully', 'success');
-    return true;
-}
-
-async function recalculateActivityShares(activityId, newBudget) {
-    const members = await getFamilyMembers();
-    const payingMembers = members.filter(m => m.member_type === 'board' || m.member_type === 'parent');
-    const numberOfPayers = payingMembers.length;
-    
-    if (numberOfPayers === 0) return;
-    
-    const amountPerPayer = newBudget / numberOfPayers;
-    
-    for (const payer of payingMembers) {
-        const dependents = members.filter(m => {
-            const responsible = getPaymentResponsibleMember(m);
-            return responsible && responsible.id === payer.id;
-        });
-        
-        const sharePerDependent = dependents.length > 0 ? amountPerPayer / dependents.length : amountPerPayer;
-        
-        for (const dependent of dependents) {
-            await _supabase
-                .from('member_activities')
-                .update({ amount_owed: sharePerDependent })
-                .eq('activity_id', activityId)
-                .eq('member_id', dependent.id);
-        }
-    }
-}
-
-async function deleteActivity(id) {
-    if (_currentRole !== 'admin') { Swal.fire('Access Denied', 'Only administrators can delete activities', 'error'); return; }
-    const result = await Swal.fire({ title: 'Delete Activity?', text: "This will delete all payment records!", icon: 'warning', showCancelButton: true, confirmButtonColor: '#d33', confirmButtonText: 'Delete' });
-    if (result.isConfirmed) {
-        await _supabase.from('payments').delete().eq('activity_id', id);
-        await _supabase.from('member_activities').delete().eq('activity_id', id);
-        await _supabase.from('activities').delete().eq('id', id);
-        await loadData();
-        await renderCurrentPage();
-        Swal.fire('Deleted!', 'Activity has been deleted.', 'success');
-    }
-}
 
 async function addMember(name, role, phone, email, profileImageFile, dob, bloodGroup, allergies, 
     emergencyContact, occupation, location, maritalStatus, anniversary, bio, favoriteColor,
-    memberType, boardPosition, parentId) {
+    positionId, boardPosition, parentId) {
     
-    console.log('➕ Adding member:', name);
-    console.log('📷 Has image file?', profileImageFile ? `Yes - ${profileImageFile.name}` : 'No');
+    console.log('========== ADD MEMBER START ==========');
+    console.log('📝 Name:', name);
+    console.log('📌 Position ID:', positionId);
+    console.log('📷 Profile image:', profileImageFile ? profileImageFile.name : 'No image');
+    console.log('👨‍👩 Parent ID:', parentId);
+    console.log('🏛️ Board Position:', boardPosition);
     
     if (_currentRole !== 'admin') { 
         Swal.fire('Access Denied', 'Only administrators can add members', 'error'); 
         return false; 
     }
     
-    // Determine payment responsible
-    let paymentResponsibleId = null;
-    if (memberType === 'child' || memberType === 'dependent') {
-        paymentResponsibleId = parentId;
+    // Validate required fields
+    if (!name) {
+        Swal.fire('Error', 'Name is required', 'error');
+        return false;
     }
     
-    // First insert member WITHOUT profile picture
-    const { data: member, error } = await _supabase
-        .from('family_members')
-        .insert({ 
-            name, 
+    if (!positionId || positionId === '') {
+        Swal.fire('Error', 'Please select a position/role', 'error');
+        return false;
+    }
+    
+    try {
+        // Get position details
+        let selectedPosition = null;
+        if (_memberPositions && _memberPositions.length > 0) {
+            selectedPosition = _memberPositions.find(p => p.id === parseInt(positionId));
+        }
+        
+        // If positions not loaded, fetch them
+        if (!selectedPosition) {
+            console.log('Positions not loaded, fetching...');
+            const { data: positionsData } = await _supabase
+                .from('member_positions')
+                .select('*')
+                .eq('id', parseInt(positionId))
+                .single();
+            selectedPosition = positionsData;
+        }
+        
+        if (!selectedPosition) {
+            console.error('Position not found for ID:', positionId);
+            Swal.fire('Error', 'Selected position not found', 'error');
+            return false;
+        }
+        
+        console.log('✅ Position found:', selectedPosition.position_name);
+        
+        // Determine member type from position category
+        const memberType = selectedPosition.category;
+        const canPay = selectedPosition.can_pay;
+        const paysMultiplier = selectedPosition.pays_multiplier;
+        
+        console.log('Member type:', memberType, 'Can pay:', canPay, 'Multiplier:', paysMultiplier);
+        
+        // Determine payment responsible
+        let paymentResponsibleId = null;
+        if (memberType === 'dependent' && parentId && parentId !== '') {
+            paymentResponsibleId = parseInt(parentId);
+        }
+        
+        // Prepare insert data
+        const insertData = { 
+            name: name,
             role: (memberType === 'board' || memberType === 'parent') ? 'parent' : 'child',
-            phone, 
-            email,
+            phone: phone || null,
+            email: email || null,
             date_of_birth: dob || null,
             blood_group: bloodGroup || null,
             allergies: allergies || null,
@@ -694,30 +752,158 @@ async function addMember(name, role, phone, email, profileImageFile, dob, bloodG
             bio: bio || null,
             favorite_color: favoriteColor || '#01605a',
             member_type: memberType,
-            parent_id: parentId || null,
+            position_id: parseInt(positionId),
+            parent_id: parentId ? parseInt(parentId) : null,
             payment_responsible_id: paymentResponsibleId,
             is_board_member: memberType === 'board',
             board_position: boardPosition || null,
-            can_approve_payments: memberType === 'board'
-        })
-        .select();
+            can_approve_payments: memberType === 'board',
+            can_pay: canPay,
+            pays_multiplier: paysMultiplier
+        };
+        
+        console.log('Inserting member with data:', insertData);
+        
+        // Insert member WITHOUT profile picture first
+        const { data: member, error } = await _supabase
+            .from('family_members')
+            .insert(insertData)
+            .select();
+        
+        if (error) { 
+            console.error('❌ Insert error:', error);
+            Swal.fire('Error', error.message, 'error'); 
+            return false; 
+        }
+        
+        if (!member || member.length === 0) {
+            console.error('No member returned after insert');
+            Swal.fire('Error', 'Failed to create member record', 'error');
+            return false;
+        }
+        
+        const memberId = member[0].id;
+        console.log('✅ Member created with ID:', memberId);
+        
+        // Upload profile picture if provided
+        if (profileImageFile) {
+            console.log('📤 Uploading profile picture...');
+            
+            const fileExt = profileImageFile.name.split('.').pop();
+            const fileName = `${memberId}-${Date.now()}.${fileExt}`;
+            
+            const { data: uploadData, error: uploadError } = await _supabase.storage
+                .from('profile-pictures')
+                .upload(fileName, profileImageFile, {
+                    cacheControl: '3600',
+                    upsert: true
+                });
+            
+            if (uploadError) {
+                console.error('❌ Upload error:', uploadError);
+                // Don't fail the whole operation, just warn
+                Swal.fire('Warning', 'Member added but profile picture upload failed', 'warning');
+            } else {
+                console.log('✅ Upload successful');
+                const profilePictureUrl = `${SUPABASE_URL}/storage/v1/object/public/profile-pictures/${fileName}`;
+                
+                // Update member with profile picture URL
+                const { error: updateError } = await _supabase
+                    .from('family_members')
+                    .update({ profile_picture: profilePictureUrl })
+                    .eq('id', memberId);
+                
+                if (updateError) {
+                    console.error('❌ Update error:', updateError);
+                } else {
+                    console.log('✅ Member updated with profile picture');
+                }
+            }
+        }
+        
+        // Recalculate all active activity shares
+        const activeActivities = _activities.filter(a => a.status === 'active');
+        for (const activity of activeActivities) {
+            await recalculateActivityShares(activity.id, activity.totalBudget);
+        }
+        
+        await loadData();
+        console.log('========== ADD MEMBER SUCCESS ==========');
+        Swal.fire('Success!', `${name} added to family as ${selectedPosition.position_name}.`, 'success');
+        return true;
+        
+    } catch (err) {
+        console.error('❌ Unexpected error in addMember:', err);
+        Swal.fire('Error', 'An unexpected error occurred: ' + err.message, 'error');
+        return false;
+    }
+}
+
+async function updateMember(id, name, role, phone, email, profileImageFile, dob, bloodGroup, allergies, 
+    emergencyContact, occupation, location, maritalStatus, anniversary, bio, favoriteColor,
+    positionId, boardPosition, parentId) {
     
-    if (error) { 
-        console.error('❌ Insert error:', error);
-        Swal.fire('Error', error.message, 'error'); 
+    console.log('✏️ Updating member:', name);
+    console.log('📷 Has new image?', profileImageFile ? `Yes - ${profileImageFile.name}` : 'No');
+    console.log('📌 New Position ID:', positionId);
+    
+    if (_currentRole !== 'admin') { 
+        Swal.fire('Access Denied', 'Only administrators can edit members', 'error'); 
         return false; 
     }
     
-    const memberId = member[0].id;
-    console.log('✅ Member created with ID:', memberId);
+    // Get current member data
+    const currentMember = _familyMembers.find(m => m.id === id);
+    if (!currentMember) {
+        Swal.fire('Error', 'Member not found', 'error');
+        return false;
+    }
     
-    // Upload profile picture if provided
-    let profilePictureUrl = null;
+    // Get position details
+    const positions = await getMemberPositions();
+    const selectedPosition = positions.find(p => p.id === parseInt(positionId));
+    
+    if (!selectedPosition) {
+        Swal.fire('Error', 'Please select a valid position', 'error');
+        return false;
+    }
+    
+    // Determine member type from position category
+    const memberType = selectedPosition.category;
+    const canPay = selectedPosition.can_pay;
+    const paysMultiplier = selectedPosition.pays_multiplier;
+    
+    // Determine payment responsible
+    let paymentResponsibleId = null;
+    if (memberType === 'dependent' && parentId) {
+        paymentResponsibleId = parentId;
+    }
+    
+    let profilePictureUrl = currentMember.profile_picture;
+    
+    // Upload new profile picture if provided
     if (profileImageFile) {
-        console.log('📤 Uploading file:', profileImageFile.name);
+        console.log('📤 Processing new profile picture...');
         
+        // Delete old profile picture from storage if it exists
+        if (currentMember.profile_picture && currentMember.profile_picture.includes('storage')) {
+            const oldFileName = currentMember.profile_picture.split('/').pop();
+            console.log('🗑️ Deleting old file:', oldFileName);
+            
+            const { error: deleteError } = await _supabase.storage
+                .from('profile-pictures')
+                .remove([oldFileName]);
+            
+            if (deleteError) {
+                console.log('Could not delete old image:', deleteError.message);
+            } else {
+                console.log('✅ Old image deleted');
+            }
+        }
+        
+        // Upload new image
         const fileExt = profileImageFile.name.split('.').pop();
-        const fileName = `${memberId}-${Date.now()}.${fileExt}`;
+        const fileName = `${id}-${Date.now()}.${fileExt}`;
         
         const { data: uploadData, error: uploadError } = await _supabase.storage
             .from('profile-pictures')
@@ -728,61 +914,16 @@ async function addMember(name, role, phone, email, profileImageFile, dob, bloodG
         
         if (uploadError) {
             console.error('❌ Upload error:', uploadError);
-            Swal.fire('Warning', 'Member added but profile picture upload failed: ' + uploadError.message, 'warning');
+            Swal.fire('Warning', 'Profile picture upload failed, but other info will be updated.', 'warning');
         } else {
             console.log('✅ Upload successful:', uploadData);
             profilePictureUrl = `${SUPABASE_URL}/storage/v1/object/public/profile-pictures/${fileName}`;
-            console.log('🔗 Profile picture URL:', profilePictureUrl);
-            
-            // Update member with profile picture URL
-            const { error: updateError } = await _supabase
-                .from('family_members')
-                .update({ profile_picture: profilePictureUrl })
-                .eq('id', memberId);
-            
-            if (updateError) {
-                console.error('❌ Update error:', updateError);
-            } else {
-                console.log('✅ Member updated with profile picture!');
-            }
+            console.log('🔗 New profile picture URL:', profilePictureUrl);
         }
     }
     
-    // Recalculate all active activity shares
-    const activeActivities = _activities.filter(a => a.status === 'active');
-    for (const activity of activeActivities) {
-        await recalculateActivityShares(activity.id, activity.totalBudget);
-    }
-    
-    await loadData();
-    Swal.fire('Success!', `${name} added to family.`, 'success');
-    return true;
-}
-
-
-async function updateMember(id, name, role, phone, email, profileImageFile, dob, bloodGroup, allergies, 
-    emergencyContact, occupation, location, maritalStatus, anniversary, bio, favoriteColor,
-    memberType, boardPosition, parentId) {
-    
-    console.log('✏️ Updating member:', name);
-    console.log('📷 Has new image?', profileImageFile ? `Yes - ${profileImageFile.name}` : 'No');
-    
-    if (_currentRole !== 'admin') { 
-        Swal.fire('Access Denied', 'Only administrators can edit members', 'error'); 
-        return false; 
-    }
-    
-    // Get current member to check for old profile picture
-    const currentMember = _familyMembers.find(m => m.id === id);
-    
-    // Determine payment responsible
-    let paymentResponsibleId = null;
-    if (memberType === 'child' || memberType === 'dependent') {
-        paymentResponsibleId = parentId;
-    }
-    
-    // First, update member WITHOUT profile picture (to be updated after upload)
-    const { data: member, error } = await _supabase
+    // Update member in database
+    const { data: updatedMember, error: updateError } = await _supabase
         .from('family_members')
         .update({ 
             name, 
@@ -800,78 +941,26 @@ async function updateMember(id, name, role, phone, email, profileImageFile, dob,
             bio: bio || null,
             favorite_color: favoriteColor || '#01605a',
             member_type: memberType,
+            position_id: positionId,
             parent_id: parentId || null,
             payment_responsible_id: paymentResponsibleId,
             is_board_member: memberType === 'board',
             board_position: boardPosition || null,
-            can_approve_payments: memberType === 'board'
-            // profile_picture will be updated separately
+            can_approve_payments: memberType === 'board',
+            can_pay: canPay,
+            pays_multiplier: paysMultiplier,
+            profile_picture: profilePictureUrl
         })
         .eq('id', id)
         .select();
     
-    if (error) { 
-        console.error('❌ Update error:', error);
-        Swal.fire('Error', error.message, 'error'); 
+    if (updateError) { 
+        console.error('❌ Update error:', updateError);
+        Swal.fire('Error', updateError.message, 'error'); 
         return false; 
     }
     
-    const memberId = member[0].id;
-    console.log('✅ Member info updated for ID:', memberId);
-    
-    // Upload new profile picture if provided
-    let profilePictureUrl = currentMember?.profile_picture || null;
-    if (profileImageFile) {
-        console.log('📤 Uploading new profile picture...');
-        
-        // Delete old profile picture from storage if it exists
-        if (currentMember?.profile_picture && currentMember.profile_picture.includes('storage')) {
-            const oldFileName = currentMember.profile_picture.split('/').pop();
-            console.log('🗑️ Deleting old file:', oldFileName);
-            
-            const { error: deleteError } = await _supabase.storage
-                .from('profile-pictures')
-                .remove([oldFileName]);
-            
-            if (deleteError) {
-                console.log('Could not delete old image:', deleteError.message);
-            } else {
-                console.log('✅ Old image deleted');
-            }
-        }
-        
-        // Upload new image
-        const fileExt = profileImageFile.name.split('.').pop();
-        const fileName = `${memberId}-${Date.now()}.${fileExt}`;
-        
-        const { data: uploadData, error: uploadError } = await _supabase.storage
-            .from('profile-pictures')
-            .upload(fileName, profileImageFile, {
-                cacheControl: '3600',
-                upsert: true
-            });
-        
-        if (uploadError) {
-            console.error('❌ Upload error:', uploadError);
-            Swal.fire('Warning', 'Profile picture upload failed, but other info was updated.', 'warning');
-        } else {
-            console.log('✅ Upload successful:', uploadData);
-            profilePictureUrl = `${SUPABASE_URL}/storage/v1/object/public/profile-pictures/${fileName}`;
-            console.log('🔗 Profile picture URL:', profilePictureUrl);
-            
-            // Update member with profile picture URL
-            const { error: updateError } = await _supabase
-                .from('family_members')
-                .update({ profile_picture: profilePictureUrl })
-                .eq('id', memberId);
-            
-            if (updateError) {
-                console.error('❌ Update error:', updateError);
-            } else {
-                console.log('✅ Member updated with profile picture!');
-            }
-        }
-    }
+    console.log('✅ Member updated successfully:', updatedMember);
     
     // Recalculate all active activity shares
     const activeActivities = _activities.filter(a => a.status === 'active');
@@ -880,9 +969,10 @@ async function updateMember(id, name, role, phone, email, profileImageFile, dob,
     }
     
     await loadData();
-    Swal.fire('Success!', `${name} updated successfully.`, 'success');
+    Swal.fire('Success!', `${name} updated successfully as ${selectedPosition.position_name}.`, 'success');
     return true;
 }
+
 async function deleteMember(id) {
     if (_currentRole !== 'admin') { Swal.fire('Access Denied', 'Only administrators can delete members', 'error'); return; }
     const { data: payments } = await _supabase.from('payments').select('*').eq('member_id', id);
@@ -1572,42 +1662,185 @@ function setupRealtimeNotifications() {
 // Render Members with Professional Table
 async function renderAdminMembers() {
     const members = await getFamilyMembers();
+    
+    // Get payment stats for all members
     const memberStats = [];
     for (const m of members) {
         const stats = await getUserStatistics(m.id);
         memberStats.push({ ...m, stats });
     }
     
-    const boardMembers = members.filter(m => m.member_type === 'board');
-    const parents = members.filter(m => m.member_type === 'parent');
-    const children = members.filter(m => m.member_type === 'child');
-    const dependents = members.filter(m => m.member_type === 'dependent');
+    // Sort: Board members first, then parents, then regular, then dependents
+    memberStats.sort((a, b) => {
+        const order = { board: 1, parent: 2, regular: 3, dependent: 4 };
+        return (order[a.member_type] || 5) - (order[b.member_type] || 5);
+    });
     
-    document.getElementById('pageContent').innerHTML = `
+    // Get positions for label display
+    const positions = await getMemberPositions();
+    
+    let tableHtml = `
         <div class="card">
-            <h2>🏛️ Board Members / Family Heads 
-                <button class="btn-primary" onclick="openAddModal()"><i class="fas fa-plus"></i> Add Member</button>
+            <h2>All Family Members 
+                <button class="btn-primary" onclick="openAddModal()">
+                    <i class="fas fa-plus"></i> Add Member
+                </button>
             </h2>
-            ${renderMemberTable(boardMembers, memberStats, 'Board Members')}
-        </div>
+            <div class="members-table-container" style="overflow-x: auto;">
+                <table class="members-table" style="width: 100%; min-width: 800px;">
+                    <thead>
+                        <tr>
+                            <th>Photo</th>
+                            <th>Name</th>
+                            <th>Position/Role</th>
+                            <th>Member Type</th>
+                            <th>Contact</th>
+                            <th>Medical</th>
+                            <th>Location</th>
+                            <th>Total Owed (UGX)</th>
+                            <th>Total Paid (UGX)</th>
+                            <th>Balance (UGX)</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+    `;
+    
+    for (const m of memberStats) {
+        // Get position name
+        const position = positions.find(p => p.id === m.position_id);
+        const positionName = position ? position.position_name : (m.member_type || 'Unknown');
         
-        <div class="card">
-            <h2>👨‍👩 Parents / Guardians</h2>
-            ${renderMemberTable(parents, memberStats, 'Parents')}
-        </div>
+        // Determine member type badge
+        let typeBadge = '';
+        if (m.member_type === 'board') typeBadge = '<span class="member-type-badge board">🏛️ Board</span>';
+        else if (m.member_type === 'parent') typeBadge = '<span class="member-type-badge parent">👨‍👩 Parent</span>';
+        else if (m.member_type === 'regular') typeBadge = '<span class="member-type-badge regular">👤 Regular</span>';
+        else if (m.member_type === 'dependent') typeBadge = '<span class="member-type-badge dependent">👶 Dependent</span>';
+        else typeBadge = '<span class="member-type-badge">❓ Unknown</span>';
         
-        <div class="card">
-            <h2>🧒 Children (Self-Paying)</h2>
-            ${renderMemberTable(children, memberStats, 'Children')}
-        </div>
+        // Responsible payer info
+        let responsibleInfo = '';
+        if (m.payment_responsible_id) {
+            const responsible = members.find(r => r.id === m.payment_responsible_id);
+            if (responsible) {
+                responsibleInfo = `<div class="payment-responsible"><i class="fas fa-user-check"></i> Pays: ${responsible.name}</div>`;
+            }
+        }
         
-        <div class="card">
-            <h2>👶 Dependents (Non-Paying - Parents Pay)</h2>
-            ${renderMemberTable(dependents, memberStats, 'Dependents')}
+        // Balance class
+        const balance = m.stats.balance || 0;
+        let balanceClass = '';
+        let balanceText = `UGX ${balance.toLocaleString()}`;
+        if (balance === 0) balanceClass = 'balance-zero';
+        else if (balance > 0) balanceClass = 'balance-positive';
+        else balanceClass = 'balance-negative';
+        
+        // Medical info
+        let medicalHtml = '';
+        if (m.blood_group) medicalHtml += `<span class="medical-badge-table"><i class="fas fa-tint"></i> ${m.blood_group}</span>`;
+        if (m.allergies) medicalHtml += `<span class="medical-badge-table"><i class="fas fa-allergies"></i> Allergy</span>`;
+        if (!medicalHtml) medicalHtml = '—';
+        
+        // Contact actions
+        let contactHtml = '—';
+        if (m.phone) {
+            contactHtml = `
+                <div class="contact-icons" onclick="event.stopPropagation()">
+                    <button class="contact-icon-btn whatsapp" onclick="sendWhatsApp('${m.phone}', 'Hello from OBUNANGWE BULAIIRE!')" title="WhatsApp">
+                        <i class="fab fa-whatsapp"></i>
+                    </button>
+                    <button class="contact-icon-btn call" onclick="makeCall('${m.phone}')" title="Call">
+                        <i class="fas fa-phone"></i>
+                    </button>
+                </div>
+            `;
+        }
+        
+        // Action buttons
+        const actionsHtml = `
+            <div class="action-buttons" onclick="event.stopPropagation()">
+                <button class="contact-icon-btn edit" onclick="openEditMember(${m.id})" title="Edit">
+                    <i class="fas fa-edit"></i>
+                </button>
+                <button class="contact-icon-btn delete" onclick="deleteMember(${m.id})" title="Delete">
+                    <i class="fas fa-trash"></i>
+                </button>
+            </div>
+        `;
+        
+        // Profile picture
+        let profileHtml = '';
+        if (m.profile_picture) {
+            profileHtml = `<img src="${m.profile_picture}" class="member-avatar-table" alt="${m.name}" onerror="this.src='https://placehold.co/40x40/01605a/white?text=📷'">`;
+        } else {
+            profileHtml = `<div class="member-avatar-placeholder"><i class="fas ${m.member_type === 'board' ? 'fa-crown' : (m.member_type === 'parent' ? 'fa-user-tie' : 'fa-user-child')}"></i></div>`;
+        }
+        
+        tableHtml += `
+            <tr onclick="showMemberDetails(${m.id})" style="cursor: pointer;">
+                <td style="text-align: center;">${profileHtml}</td>
+                <td class="member-name-cell">
+                    <strong>${escapeHtml(m.name)}</strong>
+                    ${responsibleInfo}
+                </td>
+                <td>
+                    ${positionName}
+                    ${m.board_position ? `<div><small>${m.board_position}</small></div>` : ''}
+                </td>
+                <td>${typeBadge}</td>
+                <td>${contactHtml}</td>
+                <td>${medicalHtml}</td>
+                <td>${m.location ? `<i class="fas fa-map-marker-alt"></i> ${escapeHtml(m.location)}` : '—'}</td>
+                <td class="balance-positive">UGX ${(m.stats.totalOwed || 0).toLocaleString()}</td>
+                <td style="color: var(--success); font-weight: 600;">UGX ${(m.stats.totalPaid || 0).toLocaleString()}</td>
+                <td class="${balanceClass}">${balanceText}</td>
+                <td>${actionsHtml}</td>
+            </tr>
+        `;
+    }
+    
+    tableHtml += `
+                    </tbody>
+                </table>
+            </div>
         </div>
     `;
+    
+    // Add summary stats on top (optional)
+    const totalMembers = memberStats.length;
+    const payingMembers = memberStats.filter(m => m.can_pay !== false && m.member_type !== 'dependent').length;
+    const totalOwedAll = memberStats.reduce((sum, m) => sum + (m.stats.totalOwed || 0), 0);
+    const totalPaidAll = memberStats.reduce((sum, m) => sum + (m.stats.totalPaid || 0), 0);
+    const totalBalanceAll = totalOwedAll - totalPaidAll;
+    const completionRate = totalOwedAll > 0 ? ((totalPaidAll / totalOwedAll) * 100).toFixed(1) : 100;
+    
+    const summaryHtml = `
+        <div class="stats-grid" style="margin-bottom: 20px;">
+            <div class="stat-card"><div class="stat-number">${totalMembers}</div><h3>Total Members</h3></div>
+            <div class="stat-card"><div class="stat-number">${payingMembers}</div><h3>Paying Members</h3></div>
+            <div class="stat-card"><div class="stat-number">UGX ${totalOwedAll.toLocaleString()}</div><h3>Total Owed</h3></div>
+            <div class="stat-card"><div class="stat-number">UGX ${totalPaidAll.toLocaleString()}</div><h3>Total Paid</h3></div>
+            <div class="stat-card"><div class="stat-number">UGX ${totalBalanceAll.toLocaleString()}</div><h3>Total Balance</h3></div>
+            <div class="stat-card"><div class="stat-number">${completionRate}%</div><h3>Completion Rate</h3></div>
+        </div>
+    `;
+    
+    document.getElementById('pageContent').innerHTML = summaryHtml + tableHtml;
 }
 
+// Helper function to escape HTML
+function escapeHtml(str) {
+    if (!str) return '';
+    return str.replace(/[&<>]/g, function(m) {
+        if (m === '&') return '&amp;';
+        if (m === '<') return '&lt;';
+        if (m === '>') return '&gt;';
+        return m;
+    }).replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]/g, function(c) {
+        return c;
+    });
+}
 function renderMemberTable(members, memberStats, title) {
     if (members.length === 0) {
         return `<div style="text-align:center; padding: 30px; color: #999; background: var(--gray-100); border-radius: 12px;">
@@ -2556,24 +2789,50 @@ async function renderSecurity() {
             <div style="text-align:center;padding:30px">
                 <i class="fas fa-lock" style="font-size:48px;color:var(--primary-orange);margin-bottom:15px;display:block;"></i>
                 <p style="margin-bottom:20px;">Change administrator password</p>
-                <button class="btn-primary" onclick="changePassword()">Change Password</button>
+                <button class="btn-primary" onclick="changePassword()" style="margin-bottom:15px;">Change Password</button>
             </div>
         </div>
+        
+        <div class="card">
+            <h2>Member Positions Management</h2>
+            <div style="text-align:center;padding:30px">
+                <i class="fas fa-tags" style="font-size:48px;color:var(--primary-teal);margin-bottom:15px;display:block;"></i>
+                <p style="margin-bottom:20px;">Manage custom member positions and roles</p>
+                <button class="btn-primary" onclick="openManagePositions()">
+                    <i class="fas fa-plus"></i> Manage Positions
+                </button>
+            </div>
+        </div>
+        
         <div class="card">
             <h2>System Information</h2>
             <div class="members-table-container">
                 <table class="data-table" style="width:100%;">
-                    <tr><td><strong>Version</strong></td><td>3.0.0</td></tr>
-                    <tr><td><strong>Database</strong></td><td>Supabase</td></tr>
-                    <tr><td><strong>Activities</strong></td><td>${_activities.length}</td></tr>
-                    <tr><td><strong>Members</strong></td><td>${_familyMembers.length}</td></tr>
-                    <tr><td><strong>Paying Members</strong></td><td>${_familyMembers.filter(m => m.member_type === 'board' || m.member_type === 'parent').length}</td></tr>
+                    <tr>
+                        <td><strong>Version</strong></td>
+                        <td>3.0.0</div>
+                    </tr>
+                    <tr>
+                        <td><strong>Database</strong></div>
+                        <td>Supabase</div>
+                    </tr>
+                    <tr>
+                        <td><strong>Activities</strong></div>
+                        <td>${_activities.length}</div>
+                    </tr>
+                    <tr>
+                        <td><strong>Members</strong></div>
+                        <td>${_familyMembers.length}</div>
+                    </tr>
+                    <tr>
+                        <td><strong>Positions</strong></div>
+                        <td>${_memberPositions.length}</div>
+                    </tr>
                 </table>
             </div>
         </div>
     `;
 }
-
 async function renderCurrentPage() {
     if (_currentRole === 'admin') {
         if (_currentPage === 'dashboard') await renderAdminDashboard();
@@ -2635,13 +2894,30 @@ function toggleEditMemberTypeFields() {
 // ============================================
 // POPULATE DROPDOWNS
 // ============================================
-async function populateParentDropdown() {
+async function populateParentDropdown(formType, selectedId = null) {
     const members = await getFamilyMembers();
-    const parents = members.filter(m => m.member_type === 'parent' || m.member_type === 'board');
-    const parentSelect = document.getElementById('memberParentId');
+    // Get only parents, board members, and regular members who can pay
+    const potentialParents = members.filter(m => 
+        m.member_type === 'parent' || 
+        m.member_type === 'board' || 
+        (m.member_type === 'regular' && m.can_pay === true)
+    );
+    
+    const parentSelect = formType === 'add' 
+        ? document.getElementById('memberParentId')
+        : document.getElementById('editMemberParentId');
+    
     if (parentSelect) {
-        parentSelect.innerHTML = '<option value="">Select parent/guardian</option>' + 
-            parents.map(p => `<option value="${p.id}">${p.name} (${p.member_type === 'board' ? 'Board Member' : 'Parent'})</option>`).join('');
+        parentSelect.innerHTML = '<option value="">Select parent/guardian...</option>';
+        potentialParents.forEach(p => {
+            const option = document.createElement('option');
+            option.value = p.id;
+            option.textContent = `${p.name} (${p.member_type === 'board' ? 'Board Member' : 'Parent'})`;
+            if (selectedId && selectedId == p.id) {
+                option.selected = true;
+            }
+            parentSelect.appendChild(option);
+        });
     }
 }
 
@@ -2721,8 +2997,17 @@ function openEditActivity(id) {
 function openEditMember(id) {
     (async () => {
         const m = (await getFamilyMembers()).find(m => m.id === id);
+        if (!m) return;
         
-        // Populate all fields
+        console.log('✏️ Opening edit for:', m.name);
+        
+        // Populate positions first
+        await populatePositionDropdowns();
+        
+        // Populate parent dropdown
+        await populateParentDropdown('edit', m.parent_id);
+        
+        // Set form values
         document.getElementById('editMemberId').value = m.id;
         document.getElementById('editMemberName').value = m.name;
         document.getElementById('editMemberPhone').value = m.phone || '';
@@ -2737,12 +3022,22 @@ function openEditMember(id) {
         document.getElementById('editMemberAnniversary').value = m.anniversary_date || '';
         document.getElementById('editMemberBio').value = m.bio || '';
         document.getElementById('editMemberFavoriteColor').value = m.favorite_color || '#01605a';
-        document.getElementById('editMemberType').value = m.member_type || (m.role === 'parent' ? 'parent' : 'child');
         document.getElementById('editMemberBoardPosition').value = m.board_position || '';
-        document.getElementById('editMemberParentId').value = m.parent_id || '';
         
-        toggleEditMemberTypeFields();
-        await populateEditParentDropdown(m.id);
+        // Set position dropdown value
+        const positionSelect = document.getElementById('editMemberPositionId');
+        if (positionSelect && m.position_id) {
+            positionSelect.value = m.position_id;
+        }
+        
+        // Handle parent selection for dependents
+        if (m.parent_id) {
+            const parentSelect = document.getElementById('editMemberParentId');
+            if (parentSelect) parentSelect.value = m.parent_id;
+        }
+        
+        // Trigger position change to show/hide fields
+        onPositionChange('edit');
         
         // Display existing profile picture
         const preview = document.getElementById('editImagePreview');
@@ -2754,7 +3049,11 @@ function openEditMember(id) {
             }
         }
         
+        // Clear file input
+        const imageInput = document.getElementById('editMemberImage');
+        if (imageInput) imageInput.value = '';
         window._editImageFile = null;
+        
         document.getElementById('editMemberModal').style.display = 'flex';
     })();
 }
@@ -3087,20 +3386,34 @@ if (addMemberForm) {
         submitBtn.disabled = true;
         
         try {
-            const memberType = document.getElementById('memberType').value;
+            // NEW: Get positionId instead of memberType
+            const positionId = document.getElementById('memberPositionId')?.value;
             const boardPosition = document.getElementById('memberBoardPosition')?.value;
             const parentId = document.getElementById('memberParentId')?.value;
             
+            // Validate position is selected
+            if (!positionId) {
+                Swal.fire('Error', 'Please select a position/role for the member', 'error');
+                submitBtn.innerHTML = originalText;
+                submitBtn.disabled = false;
+                return;
+            }
+            
             // IMPORTANT: Get the image file from the global variable
-            const imageFile = window._currentImageFile || null;
-            console.log('📷 Image file from preview:', imageFile ? imageFile.name : 'No image');
+            const imageInput = document.getElementById('addMemberImage');
+            const imageFile = imageInput && imageInput.files && imageInput.files.length > 0 
+                ? imageInput.files[0] 
+                : null;
+            
+            console.log('📷 Image file:', imageFile ? imageFile.name : 'No image');
+            console.log('📌 Position ID:', positionId);
             
             const result = await addMember(
                 document.getElementById('memberName').value,
-                document.getElementById('memberRole')?.value || (memberType === 'parent' ? 'parent' : 'child'),
+                'child', // role parameter (not used heavily anymore)
                 document.getElementById('memberPhone').value,
                 document.getElementById('memberEmail').value,
-                imageFile,  // Pass the file object
+                imageFile,
                 document.getElementById('memberDob')?.value,
                 document.getElementById('memberBloodGroup')?.value,
                 document.getElementById('memberAllergies')?.value,
@@ -3111,7 +3424,7 @@ if (addMemberForm) {
                 document.getElementById('memberAnniversary')?.value,
                 document.getElementById('memberBio')?.value,
                 document.getElementById('memberFavoriteColor')?.value,
-                memberType,
+                positionId,  // Pass positionId instead of memberType
                 boardPosition,
                 parentId
             );
@@ -3120,10 +3433,9 @@ if (addMemberForm) {
                 closeModal('addMemberModal');
                 newForm.reset();
                 const preview = document.getElementById('addImagePreview');
-                if (preview) preview.innerHTML = '<i class="fas fa-camera" style="font-size: 40px; color: #ccc;"></i>';
-                window._currentImageFile = null;
-                const imageInput = document.getElementById('addImageInput');
-                if (imageInput) imageInput.value = '';
+                if (preview) preview.innerHTML = '<i class="fas fa-camera"></i><span>Add Photo</span>';
+                const imageInputField = document.getElementById('addMemberImage');
+                if (imageInputField) imageInputField.value = '';
                 await renderCurrentPage();
                 queueToast('✅ Member Added', 'New family member has been added successfully.', 'success', 3000);
             }
@@ -3151,25 +3463,35 @@ if (editMemberForm) {
         submitBtn.disabled = true;
         
         try {
-            const memberType = document.getElementById('editMemberType').value;
+            // NEW: Get positionId instead of memberType
+            const positionId = document.getElementById('editMemberPositionId')?.value;
             const boardPosition = document.getElementById('editMemberBoardPosition')?.value;
             const parentId = document.getElementById('editMemberParentId')?.value;
             
-            // Get the image file from input (same as add member)
-            const imageInput = document.getElementById('editImageInput');
+            // Validate position is selected
+            if (!positionId) {
+                Swal.fire('Error', 'Please select a position/role for the member', 'error');
+                submitBtn.innerHTML = originalText;
+                submitBtn.disabled = false;
+                return;
+            }
+            
+            // Get the image file
+            const imageInput = document.getElementById('editMemberImage');
             const imageFile = imageInput && imageInput.files && imageInput.files.length > 0 
                 ? imageInput.files[0] 
                 : null;
             
             console.log('📷 Edit - Image file:', imageFile ? imageFile.name : 'No new image');
+            console.log('📌 Edit - Position ID:', positionId);
             
             const result = await updateMember(
                 parseInt(document.getElementById('editMemberId').value),
                 document.getElementById('editMemberName').value,
-                document.getElementById('editMemberRole')?.value || (memberType === 'parent' ? 'parent' : 'child'),
+                'child', // role parameter
                 document.getElementById('editMemberPhone').value,
                 document.getElementById('editMemberEmail').value,
-                imageFile,  // Same as add member - pass the File object or null
+                imageFile,
                 document.getElementById('editMemberDob')?.value,
                 document.getElementById('editMemberBloodGroup')?.value,
                 document.getElementById('editMemberAllergies')?.value,
@@ -3180,16 +3502,17 @@ if (editMemberForm) {
                 document.getElementById('editMemberAnniversary')?.value,
                 document.getElementById('editMemberBio')?.value,
                 document.getElementById('editMemberFavoriteColor')?.value,
-                memberType,
+                positionId,  // Pass positionId instead of memberType
                 boardPosition,
                 parentId
             );
             
             if (result) {
                 closeModal('editMemberModal');
-                // Clear the file input
-                if (imageInput) imageInput.value = '';
+                const imageInputField = document.getElementById('editMemberImage');
+                if (imageInputField) imageInputField.value = '';
                 await renderCurrentPage();
+                queueToast('✅ Member Updated', 'Family member has been updated successfully.', 'success', 3000);
             }
         } catch (error) {
             console.error('❌ Error updating member:', error);
@@ -3219,6 +3542,1425 @@ document.getElementById('editActivityForm')?.addEventListener('submit', async (e
 
 // Initialize birthday checker
 setInterval(checkBirthdays, 86400000);
+
+
+
+// ============================================
+// POSITION MANAGEMENT FUNCTIONS
+// ============================================
+
+// Load member positions from database
+async function loadMemberPositions() {
+    console.log('📋 Loading member positions...');
+    try {
+        const { data, error } = await _supabase
+            .from('member_positions')
+            .select('*')
+            .order('category', { ascending: true })
+            .order('position_name', { ascending: true });
+        
+        if (error) {
+            console.error('Error fetching positions:', error);
+            _memberPositions = [];
+            return [];
+        }
+        
+        _memberPositions = data || [];
+        console.log(`✅ Loaded ${_memberPositions.length} positions`);
+        return _memberPositions;
+    } catch (err) {
+        console.error('Failed to load positions:', err);
+        _memberPositions = [];
+        return [];
+    }
+}
+
+// Get all positions (simple getter)
+function getMemberPositions() {
+    return _memberPositions;
+}
+
+// Populate position dropdowns in add and edit forms
+async function populatePositionDropdowns() {
+    console.log('🔄 Populating position dropdowns');
+    
+    try {
+        // Ensure positions are loaded
+        let positions = _memberPositions;
+        if (!positions || positions.length === 0) {
+            positions = await loadMemberPositions();
+        }
+        
+        console.log(`Found ${positions.length} positions`);
+        
+        // Populate add member dropdown
+        const addPositionSelect = document.getElementById('memberPositionId');
+        if (addPositionSelect) {
+            addPositionSelect.innerHTML = '<option value="">Select position...</option>';
+            positions.forEach(pos => {
+                const option = document.createElement('option');
+                option.value = pos.id;
+                let categoryLabel = '';
+                if (pos.category === 'board') categoryLabel = '🏛️ ';
+                else if (pos.category === 'parent') categoryLabel = '👨‍👩 ';
+                else if (pos.category === 'regular') categoryLabel = '👤 ';
+                else if (pos.category === 'dependent') categoryLabel = '👶 ';
+                option.textContent = `${categoryLabel}${pos.position_name}`;
+                addPositionSelect.appendChild(option);
+            });
+            console.log('✅ Add member dropdown populated');
+        } else {
+            console.warn('memberPositionId select not found');
+        }
+        
+        // Populate edit member dropdown
+        const editPositionSelect = document.getElementById('editMemberPositionId');
+        if (editPositionSelect) {
+            editPositionSelect.innerHTML = '<option value="">Select position...</option>';
+            positions.forEach(pos => {
+                const option = document.createElement('option');
+                option.value = pos.id;
+                let categoryLabel = '';
+                if (pos.category === 'board') categoryLabel = '🏛️ ';
+                else if (pos.category === 'parent') categoryLabel = '👨‍👩 ';
+                else if (pos.category === 'regular') categoryLabel = '👤 ';
+                else if (pos.category === 'dependent') categoryLabel = '👶 ';
+                option.textContent = `${categoryLabel}${pos.position_name}`;
+                editPositionSelect.appendChild(option);
+            });
+            console.log('✅ Edit member dropdown populated');
+        }
+    } catch (error) {
+        console.error('Error in populatePositionDropdowns:', error);
+    }
+}
+
+// Refresh position dropdowns (alias)
+async function refreshPositionDropdowns() {
+    await populatePositionDropdowns();
+}
+
+// Populate parent dropdown for dependent members
+async function populateParentDropdown(formType, selectedId = null) {
+    console.log('🔄 Populating parent dropdown for:', formType);
+    
+    try {
+        const members = _familyMembers || [];
+        // Get only parents, board members, and regular members who can pay
+        const potentialParents = members.filter(m => 
+            m.member_type === 'parent' || 
+            m.member_type === 'board' || 
+            (m.member_type === 'regular' && m.can_pay === true)
+        );
+        
+        const parentSelect = formType === 'add' 
+            ? document.getElementById('memberParentId')
+            : document.getElementById('editMemberParentId');
+        
+        if (parentSelect) {
+            parentSelect.innerHTML = '<option value="">Select parent/guardian...</option>';
+            potentialParents.forEach(p => {
+                const option = document.createElement('option');
+                option.value = p.id;
+                option.textContent = `${p.name} (${p.member_type === 'board' ? 'Board Member' : 'Parent'})`;
+                if (selectedId && selectedId == p.id) {
+                    option.selected = true;
+                }
+                parentSelect.appendChild(option);
+            });
+            console.log(`✅ Parent dropdown populated with ${potentialParents.length} options`);
+        }
+    } catch (error) {
+        console.error('Error in populateParentDropdown:', error);
+    }
+}
+
+// Handle position change in forms
+async function onPositionChange(formType) {
+    console.log('🔄 Position changed for:', formType);
+    
+    const positionId = formType === 'add' 
+        ? document.getElementById('memberPositionId')?.value 
+        : document.getElementById('editMemberPositionId')?.value;
+    
+    const boardDiv = formType === 'add' 
+        ? document.getElementById('addBoardPositionDiv') 
+        : document.getElementById('editBoardPositionDiv');
+    
+    const parentDiv = formType === 'add' 
+        ? document.getElementById('addParentSelectDiv') 
+        : document.getElementById('editParentSelectDiv');
+    
+    if (!positionId) {
+        if (boardDiv) boardDiv.style.display = 'none';
+        if (parentDiv) parentDiv.style.display = 'none';
+        return;
+    }
+    
+    // Get positions
+    let positions = _memberPositions;
+    if (!positions || positions.length === 0) {
+        positions = await loadMemberPositions();
+    }
+    
+    const selectedPosition = positions.find(p => p.id === parseInt(positionId));
+    if (!selectedPosition) return;
+    
+    // Show/hide board position field
+    if (selectedPosition.category === 'board') {
+        if (boardDiv) boardDiv.style.display = 'block';
+    } else {
+        if (boardDiv) boardDiv.style.display = 'none';
+    }
+    
+    // Show/hide parent selection for dependents
+    if (selectedPosition.category === 'dependent') {
+        if (parentDiv) parentDiv.style.display = 'block';
+        await populateParentDropdown(formType);
+    } else {
+        if (parentDiv) parentDiv.style.display = 'none';
+    }
+}
+
+// Add new position
+async function addNewPosition() {
+    const positionName = document.getElementById('newPositionName')?.value.trim();
+    const category = document.getElementById('newPositionCategory')?.value;
+    const paymentCategory = document.getElementById('newPositionPaymentCategory')?.value;
+    const weight = parseFloat(document.getElementById('newPositionWeight')?.value || 1);
+    const canPay = document.getElementById('newPositionCanPay')?.checked;
+    const description = document.getElementById('newPositionDescription')?.value;
+    
+    if (!positionName) {
+        Swal.fire('Error', 'Please enter a position name', 'error');
+        return;
+    }
+    
+    const { data, error } = await _supabase
+        .from('member_positions')
+        .insert({
+            position_name: positionName,
+            category: category,
+            payment_category: paymentCategory,
+            contribution_weight: weight,
+            can_pay: canPay,
+            description: description || null,
+            is_active: true
+        })
+        .select();
+    
+    if (error) {
+        Swal.fire('Error', error.message, 'error');
+        return;
+    }
+    
+    Swal.fire('Success!', `Position "${positionName}" added successfully.`, 'success');
+    
+    // Clear form
+    document.getElementById('newPositionName').value = '';
+    document.getElementById('newPositionDescription').value = '';
+    document.getElementById('newPositionCategory').value = 'regular';
+    document.getElementById('newPositionPaymentCategory').value = 'payer';
+    document.getElementById('newPositionWeight').value = '1';
+    document.getElementById('newPositionCanPay').checked = true;
+    
+    // Reload and refresh
+    await loadMemberPositions();
+    await refreshPositionDropdowns();
+    await loadAndDisplayPositions();
+}
+
+// Delete position
+async function deletePosition(positionId, positionName) {
+    // Check if any members use this position
+    const { data: members, error } = await _supabase
+        .from('family_members')
+        .select('id')
+        .eq('position_id', positionId)
+        .limit(1);
+    
+    if (error) {
+        Swal.fire('Error', error.message, 'error');
+        return;
+    }
+    
+    if (members && members.length > 0) {
+        Swal.fire({
+            title: 'Cannot Delete',
+            text: `Position "${positionName}" is currently assigned to family members. Please reassign them first.`,
+            icon: 'warning'
+        });
+        return;
+    }
+    
+    const result = await Swal.fire({
+        title: 'Delete Position?',
+        text: `Are you sure you want to delete "${positionName}"?`,
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#e74c3c',
+        confirmButtonText: 'Yes, delete'
+    });
+    
+    if (result.isConfirmed) {
+        const { error: deleteError } = await _supabase
+            .from('member_positions')
+            .delete()
+            .eq('id', positionId);
+        
+        if (deleteError) {
+            Swal.fire('Error', deleteError.message, 'error');
+        } else {
+            Swal.fire('Deleted!', `Position "${positionName}" has been deleted.`, 'success');
+            await loadMemberPositions();
+            await refreshPositionDropdowns();
+            
+            // Refresh the positions list in modal if open
+            const modal = document.getElementById('managePositionsModal');
+            if (modal && modal.style.display === 'flex') {
+                await loadAndDisplayPositions();
+            }
+        }
+    }
+}
+
+// Load and display positions in the manage modal
+async function loadAndDisplayPositions() {
+    const container = document.getElementById('positionsList');
+    if (!container) return;
+    
+    const positions = _memberPositions;
+    
+    if (!positions || positions.length === 0) {
+        container.innerHTML = '<p style="text-align:center; color:#999;">No positions defined. Add your first position above.</p>';
+        return;
+    }
+    
+    // Group by category
+    const grouped = {
+        board: positions.filter(p => p.category === 'board'),
+        parent: positions.filter(p => p.category === 'parent'),
+        regular: positions.filter(p => p.category === 'regular'),
+        dependent: positions.filter(p => p.category === 'dependent')
+    };
+    
+    const categoryNames = {
+        board: '🏛️ Board / Leadership',
+        parent: '👨‍👩 Parents',
+        regular: '👤 Regular Members',
+        dependent: '👶 Dependents'
+    };
+    
+    const paymentCategoryLabels = {
+        payer: '<span style="color: #27ae60;">✅ Payer</span>',
+        partial_payer: '<span style="color: #f39c12;">⚠️ Partial Payer</span>',
+        non_payer: '<span style="color: #e74c3c;">❌ Non-Payer</span>'
+    };
+    
+    let html = '';
+    
+    for (const [category, categoryPositions] of Object.entries(grouped)) {
+        if (categoryPositions.length === 0) continue;
+        
+        html += `
+            <div style="margin-bottom: 25px;">
+                <h4 style="color: var(--primary-teal); margin-bottom: 10px; padding-bottom: 5px; border-bottom: 2px solid var(--primary-orange);">
+                    ${categoryNames[category]}
+                </h4>
+                <div style="background: var(--gray-50); border-radius: 10px; overflow: hidden;">
+                    <table style="width: 100%; border-collapse: collapse;">
+                        <thead>
+                            <tr style="background: var(--gray-200);">
+                                <th style="padding: 10px; text-align: left;">Position</th>
+                                <th style="padding: 10px; text-align: center;">Payment Status</th>
+                                <th style="padding: 10px; text-align: center;">Weight</th>
+                                <th style="padding: 10px; text-align: left;">Description</th>
+                                <th style="padding: 10px; text-align: center;">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+        `;
+        
+        for (const pos of categoryPositions) {
+            const paymentLabel = paymentCategoryLabels[pos.payment_category] || 'Payer';
+            html += `
+                <tr style="border-bottom: 1px solid var(--gray-200);">
+                    <td style="padding: 10px;">
+                        <strong>${escapeHtml(pos.position_name)}</strong>
+                     </div>
+                    <td style="padding: 10px; text-align: center;">${paymentLabel}</div>
+                    <td style="padding: 10px; text-align: center;">
+                        <span style="background: var(--primary-gradient); color: white; padding: 2px 8px; border-radius: 15px; font-size: 12px;">${pos.contribution_weight}x</span>
+                    </div>
+                    <td style="padding: 10px; font-size: 12px; color: #666;">${escapeHtml(pos.description) || '—'}</div>
+                    <td style="padding: 10px; text-align: center;">
+                        <button class="btn-edit" onclick="editPosition(${pos.id})" style="margin-right: 5px; padding: 4px 8px;">
+                            <i class="fas fa-edit"></i> Edit
+                        </button>
+                        <button class="btn-danger" onclick="deletePosition(${pos.id}, '${escapeHtml(pos.position_name)}')" style="padding: 4px 8px;">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </div>
+                </tr>
+            `;
+        }
+        
+        html += `
+                        </tbody>
+                    </tr>
+                </div>
+            </div>
+        `;
+    }
+    
+    container.innerHTML = html;
+}
+
+// Edit position
+async function editPosition(positionId) {
+    const positions = await getMemberPositions();
+    const position = positions.find(p => p.id === positionId);
+    
+    if (!position) return;
+    
+    const { value: formValues } = await Swal.fire({
+        title: 'Edit Position',
+        html: `
+            <div style="text-align: left;">
+                <div class="form-group">
+                    <label>Position Name</label>
+                    <input id="editPositionName" class="swal2-input" value="${escapeHtml(position.position_name)}" style="width: 100%;">
+                </div>
+                <div class="form-group">
+                    <label>Category</label>
+                    <select id="editPositionCategory" class="swal2-select" style="width: 100%;">
+                        <option value="board" ${position.category === 'board' ? 'selected' : ''}>🏛️ Board (Leadership)</option>
+                        <option value="parent" ${position.category === 'parent' ? 'selected' : ''}>👨‍👩 Parent</option>
+                        <option value="regular" ${position.category === 'regular' ? 'selected' : ''}>👤 Regular Member</option>
+                        <option value="dependent" ${position.category === 'dependent' ? 'selected' : ''}>👶 Dependent</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Payment Category</label>
+                    <select id="editPositionPaymentCategory" class="swal2-select" style="width: 100%;">
+                        <option value="payer" ${position.payment_category === 'payer' ? 'selected' : ''}>✅ Payer (Pays full share)</option>
+                        <option value="partial_payer" ${position.payment_category === 'partial_payer' ? 'selected' : ''}>⚠️ Partial Payer (Pays reduced share)</option>
+                        <option value="non_payer" ${position.payment_category === 'non_payer' ? 'selected' : ''}>❌ Non-Payer (Exempt)</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Contribution Weight</label>
+                    <select id="editPositionWeight" class="swal2-select" style="width: 100%;">
+                        <option value="0" ${position.contribution_weight === 0 ? 'selected' : ''}>0x - No payment</option>
+                        <option value="0.25" ${position.contribution_weight === 0.25 ? 'selected' : ''}>0.25x - Quarter share</option>
+                        <option value="0.5" ${position.contribution_weight === 0.5 ? 'selected' : ''}>0.5x - Half share</option>
+                        <option value="0.75" ${position.contribution_weight === 0.75 ? 'selected' : ''}>0.75x - Three-quarter share</option>
+                        <option value="1" ${position.contribution_weight === 1 ? 'selected' : ''}>1x - Standard share</option>
+                        <option value="1.25" ${position.contribution_weight === 1.25 ? 'selected' : ''}>1.25x - One and quarter share</option>
+                        <option value="1.5" ${position.contribution_weight === 1.5 ? 'selected' : ''}>1.5x - One and half share</option>
+                        <option value="2" ${position.contribution_weight === 2 ? 'selected' : ''}>2x - Double share</option>
+                        <option value="2.5" ${position.contribution_weight === 2.5 ? 'selected' : ''}>2.5x - Two and half share</option>
+                        <option value="3" ${position.contribution_weight === 3 ? 'selected' : ''}>3x - Triple share</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>
+                        <input type="checkbox" id="editPositionCanPay" ${position.can_pay ? 'checked' : ''}> Can Pay
+                    </label>
+                </div>
+                <div class="form-group">
+                    <label>Description</label>
+                    <input id="editPositionDescription" class="swal2-input" value="${escapeHtml(position.description || '')}" style="width: 100%;" placeholder="Optional description">
+                </div>
+            </div>
+        `,
+        focusConfirm: false,
+        preConfirm: () => {
+            const name = document.getElementById('editPositionName').value;
+            if (!name) {
+                Swal.showValidationMessage('Position name is required');
+                return false;
+            }
+            return {
+                name: name,
+                category: document.getElementById('editPositionCategory').value,
+                payment_category: document.getElementById('editPositionPaymentCategory').value,
+                contribution_weight: parseFloat(document.getElementById('editPositionWeight').value),
+                can_pay: document.getElementById('editPositionCanPay').checked,
+                description: document.getElementById('editPositionDescription').value
+            };
+        },
+        showCancelButton: true,
+        confirmButtonText: 'Save Changes',
+        cancelButtonText: 'Cancel'
+    });
+    
+    if (formValues) {
+        const { error } = await _supabase
+            .from('member_positions')
+            .update({
+                position_name: formValues.name,
+                category: formValues.category,
+                payment_category: formValues.payment_category,
+                contribution_weight: formValues.contribution_weight,
+                can_pay: formValues.can_pay,
+                description: formValues.description
+            })
+            .eq('id', positionId);
+        
+        if (error) {
+            Swal.fire('Error', error.message, 'error');
+        } else {
+            Swal.fire('Success!', 'Position updated successfully.', 'success');
+            await loadMemberPositions();
+            await refreshPositionDropdowns();
+            await loadAndDisplayPositions();
+        }
+    }
+}
+
+// Open manage positions modal
+async function openManagePositions() {
+    await loadMemberPositions();
+    await loadAndDisplayPositions();
+    document.getElementById('managePositionsModal').style.display = 'flex';
+}
+
+// Helper function to escape HTML
+function escapeHtml(str) {
+    if (!str) return '';
+    return str
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+// ============================================
+// MODAL FUNCTIONS - FIXED
+// ============================================
+
+function openAddModal() {
+    console.log('📂 Opening Add Member Modal');
+    
+    if (_currentRole !== 'admin') { 
+        Swal.fire('Access Denied', 'Only administrators can add members', 'error'); 
+        return; 
+    }
+    
+    if (_currentPage === 'activities') {
+        document.getElementById('addActivityModal').style.display = 'flex';
+    } 
+    else if (_currentPage === 'members') {
+        try {
+            // Reset form
+            const form = document.getElementById('addMemberForm');
+            if (form) form.reset();
+            
+            // Reset image preview
+            const preview = document.getElementById('addImagePreview');
+            if (preview) preview.innerHTML = '<i class="fas fa-camera"></i><span>Add Photo</span>';
+            
+            // Refresh position dropdowns
+            refreshPositionDropdowns();
+            
+            // Populate parent dropdown
+            populateParentDropdown('add');
+            
+            // Clear any stored image
+            window._addImageFile = null;
+            
+            // Hide conditional divs
+            const boardDiv = document.getElementById('addBoardPositionDiv');
+            const parentDiv = document.getElementById('addParentSelectDiv');
+            if (boardDiv) boardDiv.style.display = 'none';
+            if (parentDiv) parentDiv.style.display = 'none';
+            
+            // Show the modal
+            const modal = document.getElementById('addMemberModal');
+            if (modal) {
+                modal.style.display = 'flex';
+                console.log('✅ Add Member Modal opened');
+            } else {
+                console.error('❌ Add Member Modal element not found');
+            }
+        } catch (error) {
+            console.error('Error opening add member modal:', error);
+            Swal.fire('Error', 'Failed to open add member form', 'error');
+        }
+    } 
+    else if (_currentPage === 'payments') {
+        (async () => {
+            const acts = (await getActivities()).filter(a => a.status === 'active');
+            const members = await getFamilyMembers();
+            const activitySelect = document.getElementById('paymentActivityId');
+            const memberSelect = document.getElementById('paymentMemberId');
+            
+            if (activitySelect) {
+                activitySelect.innerHTML = acts.map(a => `<option value="${a.id}">${a.name} - UGX ${a.totalBudget.toLocaleString()}</option>`).join('');
+            }
+            if (memberSelect) {
+                memberSelect.innerHTML = members.map(m => `<option value="${m.id}">${m.name}</option>`).join('');
+            }
+            const paymentDate = document.getElementById('paymentDate');
+            if (paymentDate) paymentDate.value = new Date().toISOString().split('T')[0];
+            
+            document.getElementById('paymentModal').style.display = 'flex';
+        })();
+    }
+}
+
+function openEditMember(id) {
+    console.log('✏️ Opening Edit Member Modal for ID:', id);
+    
+    (async () => {
+        try {
+            const m = _familyMembers.find(member => member.id === id);
+            if (!m) {
+                console.error('Member not found with ID:', id);
+                Swal.fire('Error', 'Member not found', 'error');
+                return;
+            }
+            
+            console.log('Editing member:', m.name);
+            
+            // Refresh position dropdowns first
+            await refreshPositionDropdowns();
+            
+            // Populate parent dropdown
+            await populateParentDropdown('edit', m.parent_id);
+            
+            // Set form values
+            document.getElementById('editMemberId').value = m.id;
+            document.getElementById('editMemberName').value = m.name || '';
+            document.getElementById('editMemberPhone').value = m.phone || '';
+            document.getElementById('editMemberEmail').value = m.email || '';
+            document.getElementById('editMemberDob').value = m.date_of_birth || '';
+            document.getElementById('editMemberBloodGroup').value = m.blood_group || '';
+            document.getElementById('editMemberAllergies').value = m.allergies || '';
+            document.getElementById('editMemberEmergencyContact').value = m.emergency_contact || '';
+            document.getElementById('editMemberOccupation').value = m.occupation || '';
+            document.getElementById('editMemberLocation').value = m.location || '';
+            document.getElementById('editMemberMaritalStatus').value = m.marital_status || '';
+            document.getElementById('editMemberAnniversary').value = m.anniversary_date || '';
+            document.getElementById('editMemberBio').value = m.bio || '';
+            document.getElementById('editMemberFavoriteColor').value = m.favorite_color || '#01605a';
+            document.getElementById('editMemberBoardPosition').value = m.board_position || '';
+            
+            // Set position dropdown value
+            const positionSelect = document.getElementById('editMemberPositionId');
+            if (positionSelect && m.position_id) {
+                positionSelect.value = m.position_id;
+            }
+            
+            // Handle parent selection for dependents
+            if (m.parent_id) {
+                const parentSelect = document.getElementById('editMemberParentId');
+                if (parentSelect) parentSelect.value = m.parent_id;
+            }
+            
+            // Trigger position change to show/hide fields
+            onPositionChange('edit');
+            
+            // Display existing profile picture
+            const preview = document.getElementById('editImagePreview');
+            if (preview) {
+                if (m.profile_picture && m.profile_picture.startsWith('http')) {
+                    preview.innerHTML = `<img src="${m.profile_picture}" alt="${m.name}" style="width: 100%; height: 100%; object-fit: cover; border-radius: 50%;">`;
+                } else {
+                    preview.innerHTML = '<i class="fas fa-camera" style="font-size: 40px; color: white;"></i>';
+                }
+            }
+            
+            // Clear file input
+            const imageInput = document.getElementById('editMemberImage');
+            if (imageInput) imageInput.value = '';
+            window._editImageFile = null;
+            
+            // Show the modal
+            const modal = document.getElementById('editMemberModal');
+            if (modal) {
+                modal.style.display = 'flex';
+                console.log('✅ Edit Member Modal opened');
+            } else {
+                console.error('❌ Edit Member Modal element not found');
+            }
+        } catch (error) {
+            console.error('Error opening edit member modal:', error);
+            Swal.fire('Error', 'Failed to open edit member form', 'error');
+        }
+    })();
+}
+
+// Make sure these functions are exposed globally
+window.openAddModal = openAddModal;
+window.openEditMember = openEditMember;
+
+
+
+async function refreshPositionDropdowns() {
+    console.log('🔄 Refreshing position dropdowns');
+    
+    // Get positions from global variable
+    const positions = _memberPositions || [];
+    
+    // Populate add member dropdown
+    const addPositionSelect = document.getElementById('memberPositionId');
+    if (addPositionSelect) {
+        addPositionSelect.innerHTML = '<option value="">Select position...</option>';
+        positions.forEach(pos => {
+            const option = document.createElement('option');
+            option.value = pos.id;
+            let categoryLabel = '';
+            if (pos.category === 'board') categoryLabel = '🏛️ ';
+            else if (pos.category === 'parent') categoryLabel = '👨‍👩 ';
+            else if (pos.category === 'regular') categoryLabel = '👤 ';
+            else if (pos.category === 'dependent') categoryLabel = '👶 ';
+            option.textContent = `${categoryLabel}${pos.position_name}`;
+            addPositionSelect.appendChild(option);
+        });
+        console.log(`✅ Added ${positions.length} positions to add form`);
+    }
+    
+    // Populate edit member dropdown
+    const editPositionSelect = document.getElementById('editMemberPositionId');
+    if (editPositionSelect) {
+        editPositionSelect.innerHTML = '<option value="">Select position...</option>';
+        positions.forEach(pos => {
+            const option = document.createElement('option');
+            option.value = pos.id;
+            let categoryLabel = '';
+            if (pos.category === 'board') categoryLabel = '🏛️ ';
+            else if (pos.category === 'parent') categoryLabel = '👨‍👩 ';
+            else if (pos.category === 'regular') categoryLabel = '👤 ';
+            else if (pos.category === 'dependent') categoryLabel = '👶 ';
+            option.textContent = `${categoryLabel}${pos.position_name}`;
+            editPositionSelect.appendChild(option);
+        });
+        console.log(`✅ Added ${positions.length} positions to edit form`);
+    }
+}
+
+
+// ============================================
+// ACTIVITY FUNCTIONS WITH POSITION-BASED DISTRIBUTION
+// ============================================
+
+// Get all members with their payment eligibility (based on positions)
+async function getPaymentEligibleMembers() {
+    const members = await getFamilyMembers();
+    const positions = await getMemberPositions();
+    
+    const eligibleMembers = [];
+    
+    for (const member of members) {
+        const position = positions.find(p => p.id === member.position_id);
+        
+        // Determine if member should pay based on position
+        let shouldPay = true;
+        let weight = 1.0;
+        let reason = '';
+        let paymentCategory = 'payer';
+        
+        if (position) {
+            paymentCategory = position.payment_category || 'payer';
+            weight = position.contribution_weight || 1.0;
+            
+            if (paymentCategory === 'non_payer') {
+                shouldPay = false;
+                reason = `${position.position_name} - Non-paying position`;
+            } else if (paymentCategory === 'partial_payer') {
+                shouldPay = true;
+                reason = `${position.position_name} - Pays ${weight}x share`;
+            } else {
+                shouldPay = position.can_pay !== false;
+                reason = `${position.position_name} - Pays ${weight}x share`;
+            }
+        } else {
+            // Fallback if no position assigned
+            if (member.member_type === 'dependent') {
+                shouldPay = false;
+                reason = 'Dependent - Non-paying';
+            } else if (member.member_type === 'board') {
+                shouldPay = true;
+                weight = 2.0;
+                reason = 'Board Member - Double share';
+            } else if (member.member_type === 'parent') {
+                shouldPay = true;
+                weight = 1.0;
+                reason = 'Parent - Standard share';
+            } else if (member.member_type === 'child' && member.can_pay === false) {
+                shouldPay = false;
+                reason = 'Child - Non-paying';
+            } else {
+                shouldPay = member.can_pay !== false;
+                weight = 1.0;
+                reason = 'Regular member - Standard share';
+            }
+        }
+        
+        // Check if member has a responsible payer
+        if (member.payment_responsible_id && member.payment_responsible_id !== member.id) {
+            const responsible = members.find(m => m.id === member.payment_responsible_id);
+            if (responsible) {
+                shouldPay = false;
+                reason = `Payments handled by ${responsible.name}`;
+            }
+        }
+        
+        eligibleMembers.push({
+            id: member.id,
+            name: member.name,
+            member_type: member.member_type,
+            position_name: position?.position_name || member.member_type,
+            shouldPay: shouldPay,
+            weight: weight,
+            payment_category: paymentCategory,
+            reason: reason,
+            can_pay: member.can_pay !== false
+        });
+    }
+    
+    return eligibleMembers;
+}
+
+// Calculate smart budget distribution based on positions
+async function calculateSmartDistribution(totalBudget, activityId) {
+    const eligibleMembers = await getPaymentEligibleMembers();
+    
+    // Filter only members who should pay
+    const payingMembers = eligibleMembers.filter(m => m.shouldPay === true);
+    
+    if (payingMembers.length === 0) {
+        return { 
+            distribution: [], 
+            totalPayers: 0, 
+            totalWeight: 0,
+            sharePerWeight: 0,
+            message: 'No eligible paying members found! Please check position payment settings.'
+        };
+    }
+    
+    // Calculate total weight
+    let totalWeight = 0;
+    for (const member of payingMembers) {
+        totalWeight += member.weight;
+    }
+    
+    // Calculate amount per weight unit
+    const sharePerWeight = totalBudget / totalWeight;
+    
+    // Distribute to each paying member
+    const distribution = [];
+    for (const member of payingMembers) {
+        const amountOwed = sharePerWeight * member.weight;
+        distribution.push({
+            memberId: member.id,
+            memberName: member.name,
+            memberType: member.member_type,
+            position: member.position_name,
+            weight: member.weight,
+            payment_category: member.payment_category,
+            amountOwed: amountOwed,
+            shouldPay: true
+        });
+    }
+    
+    // Add non-paying members for reference
+    const nonPayingMembers = eligibleMembers.filter(m => m.shouldPay === false);
+    for (const member of nonPayingMembers) {
+        distribution.push({
+            memberId: member.id,
+            memberName: member.name,
+            memberType: member.member_type,
+            position: member.position_name,
+            weight: 0,
+            amountOwed: 0,
+            shouldPay: false,
+            reason: member.reason,
+            payment_category: member.payment_category
+        });
+    }
+    
+    return {
+        distribution: distribution,
+        totalPayers: payingMembers.length,
+        totalWeight: totalWeight,
+        sharePerWeight: sharePerWeight,
+        message: `${payingMembers.length} members will split UGX ${totalBudget.toLocaleString()} based on their position weights.`
+    };
+}
+
+// Show distribution preview before creating activity
+async function showDistributionPreview(budget) {
+    const eligibleMembers = await getPaymentEligibleMembers();
+    const payingMembers = eligibleMembers.filter(m => m.shouldPay === true);
+    
+    if (payingMembers.length === 0) {
+        const result = await Swal.fire({
+            title: '⚠️ No Paying Members',
+            html: `
+                <div style="text-align: left;">
+                    <p>There are no members eligible to pay.</p>
+                    <p>Please check:</p>
+                    <ul style="margin-left: 20px;">
+                        <li>Member positions have payment category = "Payer" or "Partial Payer"</li>
+                        <li>Members are assigned to correct positions</li>
+                        <li>"Can Pay" setting is enabled for the position</li>
+                    </ul>
+                </div>
+            `,
+            icon: 'warning',
+            confirmButtonText: 'Go to Positions',
+            showCancelButton: true,
+            cancelButtonText: 'Cancel'
+        });
+        
+        if (result.isConfirmed) {
+            openManagePositions();
+        }
+        return false;
+    }
+    
+    // Calculate distribution
+    let totalWeight = payingMembers.reduce((sum, m) => sum + m.weight, 0);
+    const sharePerWeight = budget / totalWeight;
+    
+    let distributionHtml = `
+        <div style="max-height: 400px; overflow-y: auto;">
+            <div style="background: var(--primary-light); padding: 10px; border-radius: 10px; margin-bottom: 15px;">
+                <p style="margin: 0;"><strong>💰 Budget:</strong> UGX ${budget.toLocaleString()}</p>
+                <p style="margin: 5px 0 0;"><strong>⚖️ Total Weight:</strong> ${totalWeight} shares</p>
+                <p style="margin: 5px 0 0;"><strong>📊 Each share:</strong> UGX ${sharePerWeight.toLocaleString()}</p>
+            </div>
+            <table style="width: 100%; border-collapse: collapse;">
+                <thead>
+                    <tr style="background: var(--primary-teal); color: white;">
+                        <th style="padding: 10px; text-align: left;">Member</th>
+                        <th style="padding: 10px; text-align: left;">Position</th>
+                        <th style="padding: 10px; text-align: center;">Weight</th>
+                        <th style="padding: 10px; text-align: right;">Amount (UGX)</th>
+                    </tr>
+                </thead>
+                <tbody>
+    `;
+    
+    for (const member of payingMembers) {
+        const amount = sharePerWeight * member.weight;
+        distributionHtml += `
+            <tr style="border-bottom: 1px solid #ddd;">
+                <td style="padding: 8px;"><strong>${member.name}</strong>${member.payment_category === 'partial_payer' ? ' <span style="font-size: 10px; color: #f39c12;">(Partial)</span>' : ''}</td>
+                <td style="padding: 8px;">${member.position_name}</td>
+                <td style="padding: 8px; text-align: center;">${member.weight}x</td>
+                <td style="padding: 8px; text-align: right; color: var(--success); font-weight: bold;">UGX ${amount.toLocaleString()}</td>
+            </tr>
+        `;
+    }
+    
+    distributionHtml += `
+                </tbody>
+            </table>
+            <div style="margin-top: 15px; padding: 10px; background: #e8f5e9; border-radius: 8px;">
+                <strong>📋 Summary:</strong> ${payingMembers.length} paying members | Total weight: ${totalWeight} shares
+            </div>
+            <div style="margin-top: 10px; padding: 8px; background: #fff3e0; border-radius: 8px; font-size: 12px;">
+                <i class="fas fa-info-circle"></i> Non-paying members (dependents, children) are exempt from this activity.
+            </div>
+        </div>
+    `;
+    
+    const result = await Swal.fire({
+        title: '💰 Budget Distribution Preview',
+        html: distributionHtml,
+        icon: 'info',
+        showCancelButton: true,
+        confirmButtonText: '✅ Create Activity',
+        cancelButtonText: 'Cancel',
+        confirmButtonColor: '#27ae60',
+        width: '700px'
+    });
+    
+    return result.isConfirmed;
+}
+
+// CREATE ACTIVITY - Updated
+async function createActivity(name, desc, budget, dueDate) {
+    if (_currentRole !== 'admin') { 
+        Swal.fire('Access Denied', 'Only administrators can create activities', 'error'); 
+        return false; 
+    }
+    
+    // Validate inputs
+    if (!name) {
+        Swal.fire('Error', 'Activity name is required', 'error');
+        return false;
+    }
+    
+    const budgetValue = parseFloat(budget);
+    if (isNaN(budgetValue) || budgetValue <= 0) {
+        Swal.fire('Error', 'Please enter a valid budget amount', 'error');
+        return false;
+    }
+    
+    if (!dueDate) {
+        Swal.fire('Error', 'Due date is required', 'error');
+        return false;
+    }
+    
+    // Show distribution preview first
+    const confirmed = await showDistributionPreview(budgetValue);
+    if (!confirmed) return false;
+    
+    const members = await getFamilyMembers();
+    if (members.length === 0) {
+        Swal.fire('Error', 'No family members found.', 'error');
+        return false;
+    }
+    
+    // Create the activity
+    const { data: activity, error } = await _supabase
+        .from('activities')
+        .insert({ 
+            name: name, 
+            description: desc || null, 
+            total_budget: budgetValue, 
+            expected_completion_date: dueDate, 
+            status: 'active' 
+        })
+        .select();
+    
+    if (error) { 
+        console.error('Create activity error:', error);
+        Swal.fire('Error', error.message, 'error'); 
+        return false; 
+    }
+    
+    const activityId = activity[0].id;
+    
+    // Get smart distribution based on positions
+    const distribution = await calculateSmartDistribution(budgetValue, activityId);
+    
+    // Assign amounts to members
+    for (const member of members) {
+        const dist = distribution.distribution.find(d => d.memberId === member.id);
+        const amountOwed = dist ? dist.amountOwed : 0;
+        const status = amountOwed === 0 ? 'exempt' : 'unpaid';
+        const notes = dist && !dist.shouldPay ? dist.reason : null;
+        
+        await _supabase.from('member_activities').insert({
+            activity_id: activityId,
+            member_id: member.id,
+            amount_owed: amountOwed,
+            amount_paid: 0,
+            status: status,
+            notes: notes
+        });
+    }
+    
+    await loadData();
+    
+    // Send notification
+    addNotification('📢 New Activity', `"${name}" has been created with budget UGX ${budgetValue.toLocaleString()}`);
+    
+    Swal.fire({
+        title: '✅ Activity Created!',
+        html: `
+            <div style="text-align: left;">
+                <p><strong>${name}</strong> created successfully.</p>
+                <p>💰 Budget: UGX ${budgetValue.toLocaleString()}</p>
+                <p>👥 Paying members: ${distribution.totalPayers}</p>
+                <p>⚖️ Distribution based on position weights.</p>
+            </div>
+        `,
+        icon: 'success',
+        confirmButtonText: 'OK'
+    });
+    
+    return true;
+}
+
+// UPDATE ACTIVITY - Updated
+async function updateActivity(id, name, desc, budget, dueDate, status) {
+    if (_currentRole !== 'admin') { 
+        Swal.fire('Access Denied', 'Only administrators can edit activities', 'error'); 
+        return false; 
+    }
+    
+    const oldActivity = _activities.find(a => a.id === id);
+    const newBudget = parseFloat(budget);
+    
+    // If budget changed or status changing to completed, handle accordingly
+    if (status === 'completed' && oldActivity?.status !== 'completed') {
+        const result = await Swal.fire({
+            title: 'Complete Activity?',
+            html: `
+                <div style="text-align: left;">
+                    <p>Are you sure you want to mark "${name}" as completed?</p>
+                    <p>Any outstanding balances will be automatically waived.</p>
+                </div>
+            `,
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#e74c3c',
+            cancelButtonColor: '#95a5a6',
+            confirmButtonText: 'Yes, Complete & Waive',
+            cancelButtonText: 'Cancel'
+        });
+        
+        if (!result.isConfirmed) {
+            return false;
+        }
+        
+        // Complete the activity and waive balances
+        await completeActivityAndWaiveBalances(id);
+        
+        const { error } = await _supabase
+            .from('activities')
+            .update({ 
+                name, 
+                description: desc, 
+                total_budget: newBudget, 
+                expected_completion_date: dueDate, 
+                status: 'completed' 
+            })
+            .eq('id', id);
+        
+        if (error) { 
+            Swal.fire('Error', error.message, 'error'); 
+            return false; 
+        }
+        
+        addNotification('🎉 Activity Completed', `"${name}" has been completed. Outstanding balances waived.`, 'success');
+        queueToast('🎉 Activity Completed!', `"${name}" has been completed.`, 'success', 6000);
+        
+    } else {
+        // Normal update without completion
+        const { error } = await _supabase
+            .from('activities')
+            .update({ 
+                name, 
+                description: desc, 
+                total_budget: newBudget, 
+                expected_completion_date: dueDate, 
+                status: status 
+            })
+            .eq('id', id);
+        
+        if (error) { 
+            Swal.fire('Error', error.message, 'error'); 
+            return false; 
+        }
+        
+        // Recalculate shares if budget changed and activity is active
+        if (status === 'active' && newBudget !== oldActivity?.totalBudget) {
+            await recalculateActivityShares(id, newBudget);
+            queueToast('💰 Budget Updated', `Activity budget changed. Shares recalculated.`, 'info', 4000);
+        }
+    }
+    
+    await loadData();
+    await renderCurrentPage();
+    
+    Swal.fire('Updated!', 'Activity updated successfully', 'success');
+    return true;
+}
+
+// RECALCULATE ACTIVITY SHARES - Updated
+async function recalculateActivityShares(activityId, newBudget) {
+    const members = await getFamilyMembers();
+    
+    // Get smart distribution based on positions
+    const distribution = await calculateSmartDistribution(newBudget, activityId);
+    
+    // Update each member's amount
+    for (const member of members) {
+        const dist = distribution.distribution.find(d => d.memberId === member.id);
+        const amountOwed = dist ? dist.amountOwed : 0;
+        const status = amountOwed === 0 ? 'exempt' : 'unpaid';
+        const notes = dist && !dist.shouldPay ? dist.reason : null;
+        
+        await _supabase
+            .from('member_activities')
+            .update({ 
+                amount_owed: amountOwed,
+                status: status,
+                notes: notes
+            })
+            .eq('activity_id', activityId)
+            .eq('member_id', member.id);
+    }
+}
+
+// DELETE ACTIVITY
+async function deleteActivity(id) {
+    if (_currentRole !== 'admin') { 
+        Swal.fire('Access Denied', 'Only administrators can delete activities', 'error'); 
+        return; 
+    }
+    
+    const result = await Swal.fire({ 
+        title: 'Delete Activity?', 
+        text: "This will delete all payment records for this activity!", 
+        icon: 'warning', 
+        showCancelButton: true, 
+        confirmButtonColor: '#d33', 
+        confirmButtonText: 'Delete' 
+    });
+    
+    if (result.isConfirmed) {
+        await _supabase.from('payments').delete().eq('activity_id', id);
+        await _supabase.from('member_activities').delete().eq('activity_id', id);
+        await _supabase.from('activities').delete().eq('id', id);
+        
+        await loadData();
+        await renderCurrentPage();
+        
+        Swal.fire('Deleted!', 'Activity has been deleted.', 'success');
+    }
+}
+
+// MANUALLY COMPLETE ACTIVITY
+async function manuallyCompleteActivity(activityId) {
+    if (_currentRole !== 'admin') {
+        Swal.fire('Access Denied', 'Only administrators can complete activities', 'error');
+        return false;
+    }
+    
+    const activity = _activities.find(a => a.id === activityId);
+    if (!activity) return false;
+    
+    // Check for members with outstanding balances
+    const { data: allMemberActivities } = await _supabase
+        .from('member_activities')
+        .select('*, family_members(name)')
+        .eq('activity_id', activityId);
+    
+    const membersWithBalance = [];
+    for (const ma of allMemberActivities) {
+        const balance = (ma.amount_owed || 0) - (ma.amount_paid || 0);
+        if (balance > 0) {
+            membersWithBalance.push({ 
+                memberId: ma.member_id, 
+                balance: balance,
+                name: ma.family_members?.name || 'Unknown'
+            });
+        }
+    }
+    
+    // Show confirmation with list of members whose balances will be waived
+    if (membersWithBalance.length > 0) {
+        const memberList = membersWithBalance.map(m => `• ${m.name}: UGX ${m.balance.toLocaleString()}`).join('\n');
+        
+        const result = await Swal.fire({
+            title: 'Complete Activity?',
+            html: `
+                <div style="text-align: left;">
+                    <p><strong>Activity:</strong> ${activity.name}</p>
+                    <p><strong>Total Budget:</strong> UGX ${(activity.totalBudget || 0).toLocaleString()}</p>
+                    <hr>
+                    <p><strong>The following members have outstanding balances that will be WAIVED:</strong></p>
+                    <pre style="background: #fff3cd; padding: 10px; border-radius: 5px;">${memberList}</pre>
+                    <p style="color: var(--danger);"><strong>⚠️ Warning:</strong> This action cannot be undone.</p>
+                </div>
+            `,
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#e74c3c',
+            cancelButtonColor: '#95a5a6',
+            confirmButtonText: 'Yes, Complete & Waive Balances',
+            cancelButtonText: 'Cancel'
+        });
+        
+        if (!result.isConfirmed) return false;
+    } else {
+        const result = await Swal.fire({
+            title: 'Complete Activity?',
+            text: `"${activity.name}" has no outstanding balances. Mark as completed?`,
+            icon: 'question',
+            showCancelButton: true,
+            confirmButtonColor: '#27ae60',
+            cancelButtonColor: '#95a5a6',
+            confirmButtonText: 'Yes, Complete',
+            cancelButtonText: 'Cancel'
+        });
+        
+        if (!result.isConfirmed) return false;
+    }
+    
+    // Complete activity and waive balances
+    await completeActivityAndWaiveBalances(activityId, membersWithBalance);
+    
+    await loadData();
+    await renderCurrentPage();
+    
+    const waivedCount = membersWithBalance.length;
+    if (waivedCount > 0) {
+        queueToast('✅ Activity Completed', `"${activity.name}" completed. ${waivedCount} member(s) had balances waived.`, 'success', 6000);
+        Swal.fire('Completed!', `Activity "${activity.name}" has been completed. ${waivedCount} member(s) had their outstanding balances waived.`, 'success');
+    } else {
+        queueToast('✅ Activity Completed', `"${activity.name}" has been completed.`, 'success', 4000);
+        Swal.fire('Completed!', `Activity "${activity.name}" has been completed.`, 'success');
+    }
+    
+    return true;
+}
+
+// COMPLETE ACTIVITY AND WAIVE BALANCES
+async function completeActivityAndWaiveBalances(activityId, membersWithBalance = null) {
+    // Get all member activities for this activity if not provided
+    if (!membersWithBalance) {
+        const { data: allMemberActivities } = await _supabase
+            .from('member_activities')
+            .select('*')
+            .eq('activity_id', activityId);
+        
+        membersWithBalance = [];
+        for (const ma of allMemberActivities) {
+            const balance = (ma.amount_owed || 0) - (ma.amount_paid || 0);
+            if (balance > 0) {
+                membersWithBalance.push({ memberId: ma.member_id, balance: balance });
+            }
+        }
+    }
+    
+    // Waive outstanding balances for members who still owe money
+    for (const member of membersWithBalance) {
+        const { data: memberActivity } = await _supabase
+            .from('member_activities')
+            .select('*')
+            .eq('activity_id', activityId)
+            .eq('member_id', member.memberId)
+            .single();
+        
+        if (memberActivity && memberActivity.amount_owed > memberActivity.amount_paid) {
+            const waivedAmount = memberActivity.amount_owed - memberActivity.amount_paid;
+            
+            await _supabase
+                .from('member_activities')
+                .update({ 
+                    amount_owed: memberActivity.amount_paid,
+                    adjustment_amount: waivedAmount,
+                    adjustment_reason: 'Auto-waived on activity completion',
+                    status: 'paid'
+                })
+                .eq('activity_id', activityId)
+                .eq('member_id', member.memberId);
+            
+            const waivedMember = _familyMembers.find(m => m.id === member.memberId);
+            await _supabase.from('payment_adjustments').insert({
+                member_id: member.memberId,
+                activity_id: activityId,
+                adjustment_amount: waivedAmount,
+                adjustment_type: 'waive',
+                reason: `Auto-waived remaining balance of UGX ${waivedAmount.toLocaleString()} upon activity completion`,
+                approved_by: _currentUser?.id || 0
+            });
+            
+            queueToast('💰 Balance Waived', `${waivedMember?.name} had UGX ${waivedAmount.toLocaleString()} waived`, 'warning', 5000);
+        }
+    }
+    
+    // Mark activity as completed
+    await _supabase
+        .from('activities')
+        .update({ status: 'completed' })
+        .eq('id', activityId);
+    
+    // Send notifications
+    addNotification('🎉 Activity Completed', `Activity has been marked as completed.`, 'success');
+    
+    return true;
+}
+
+// SHOW ACTIVITY DETAILS - Updated to show position-based info
+async function showActivityDetails(activityId) {
+    const activity = _activities.find(a => a.id === activityId);
+    if (!activity) return;
+    
+    // Get member details with positions
+    const positions = await getMemberPositions();
+    
+    let html = `
+        <div style="margin-bottom: 15px;">
+            <h3>${activity.name}</h3>
+            <p>${activity.description || 'No description'}</p>
+            <p><strong>💰 Budget:</strong> UGX ${(activity.totalBudget || 0).toLocaleString()}</p>
+            <p><strong>📅 Due:</strong> ${new Date(activity.expectedCompletionDate).toLocaleDateString()}</p>
+            <p><strong>Status:</strong> <span class="badge badge-${activity.status}">${activity.status}</span></p>
+        </div>
+        <h4 style="margin-top: 10px;">Member Payment Breakdown</h4>
+        <div style="overflow-x: auto;">
+            <table class="data-table" style="width: 100%;">
+                <thead>
+                    <tr>
+                        <th>Member</th>
+                        <th>Position</th>
+                        <th>Payment Status</th>
+                        <th>Owed (UGX)</th>
+                        <th>Paid (UGX)</th>
+                        <th>Balance (UGX)</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>`;
+    
+    for (const mp of activity.memberPayments || []) {
+        const balance = (mp.amount_owed || 0) - (mp.amount_paid || 0);
+        const member = mp.family_members;
+        const position = positions.find(p => p.id === member?.position_id);
+        const positionName = position?.position_name || member?.member_type || 'Unknown';
+        
+        let paymentStatusClass = '';
+        let paymentStatusText = '';
+        if (mp.status === 'paid') {
+            paymentStatusClass = 'paid-status';
+            paymentStatusText = '✅ Paid';
+        } else if (mp.status === 'partial') {
+            paymentStatusClass = 'partial-status';
+            paymentStatusText = '⚠️ Partial';
+        } else if (mp.status === 'exempt') {
+            paymentStatusClass = 'exempt-status';
+            paymentStatusText = '🚫 Exempt';
+        } else {
+            paymentStatusClass = 'unpaid-status';
+            paymentStatusText = '❌ Unpaid';
+        }
+        
+        const owesMoney = balance > 0 && mp.status !== 'exempt';
+        const isExempt = mp.status === 'exempt';
+        
+        html += `<tr>
+            <td><strong>${member?.name || 'Unknown'}</strong></td>
+            <td>${positionName}</td>
+            <td class="${paymentStatusClass}">${paymentStatusText}</td>
+            <td>UGX ${(mp.amount_owed || 0).toLocaleString()}</td>
+            <td style="color: var(--success);">UGX ${(mp.amount_paid || 0).toLocaleString()}</td>
+            <td class="${balance === 0 ? 'balance-zero' : 'balance-positive'}">UGX ${balance.toLocaleString()}</td>
+            <td onclick="event.stopPropagation()">
+                ${!isExempt && activity.status !== 'completed' ? `<button class="btn-adjust" onclick="openAdjustmentModal(${activity.id}, ${mp.member_id})">
+                    <i class="fas fa-sliders-h"></i> Adjust
+                </button>` : ''}
+            </td>
+        </tr>`;
+    }
+    
+    html += `</tbody></table></div>`;
+    
+    // Add complete button if activity is not completed
+    if (activity.status !== 'completed' && _currentRole === 'admin') {
+        html += `
+            <div style="margin-top: 20px; text-align: center;">
+                <button class="btn-whatsapp" onclick="manuallyCompleteActivity(${activity.id})" style="background: var(--warning);">
+                    <i class="fas fa-check-circle"></i> Complete Activity & Waive Balances
+                </button>
+            </div>
+        `;
+    }
+    
+    document.getElementById('activityDetailsContent').innerHTML = html;
+    document.getElementById('activityDetailsModal').style.display = 'flex';
+}
 
 // ============================================
 // EXPOSE GLOBAL FUNCTIONS
