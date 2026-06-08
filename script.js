@@ -2516,51 +2516,352 @@ async function renderAdminReports() {
 async function renderUserDashboard() {
     const userStats = await getUserStatistics(_currentUser.id);
     const userActivities = await getMemberActivities(_currentUser.id);
+    const members = await getFamilyMembers();
+    
+    // Calculate payment progress percentage
+    const progressPercent = userStats.totalOwed > 0 
+        ? (userStats.totalPaid / userStats.totalOwed * 100).toFixed(1) 
+        : 100;
+    
+    // Get current member's details
+    const currentMember = _familyMembers.find(m => m.id === _currentUser.id);
+    const position = _memberPositions.find(p => p.id === currentMember?.position_id);
+    
+    // Find family head/board members
+    const familyHead = members.find(m => m.member_type === 'board' && m.board_position === 'Chairperson');
+    const treasurer = members.find(m => m.member_type === 'board' && m.board_position === 'Treasurer');
+    
+    // Get recent payments
+    const recentPayments = await getMemberPayments(_currentUser.id);
+    const recentActivities = userActivities.slice(0, 3);
     
     document.getElementById('pageContent').innerHTML = `
-        <div class="stats-grid">
-            <div class="stat-card"><div class="stat-number">UGX ${userStats.totalOwed.toLocaleString()}</div><h3>My Total Owed</h3></div>
-            <div class="stat-card"><div class="stat-number">UGX ${userStats.totalPaid.toLocaleString()}</div><h3>My Total Paid</h3></div>
-            <div class="stat-card"><div class="stat-number">UGX ${userStats.balance.toLocaleString()}</div><h3>My Balance</h3></div>
-            <div class="stat-card"><div class="stat-number">${userActivities.length}</div><h3>My Activities</h3></div>
-        </div>
+        <style>
+            .welcome-card {
+                background: linear-gradient(135deg, #01605a, #0a7a72);
+                border-radius: 24px;
+                padding: 25px;
+                margin-bottom: 24px;
+                color: white;
+                position: relative;
+                overflow: hidden;
+            }
+            .welcome-card::before {
+                content: '';
+                position: absolute;
+                top: -50%;
+                right: -50%;
+                width: 200%;
+                height: 200%;
+                background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, transparent 70%);
+                pointer-events: none;
+            }
+            .stat-card-user {
+                background: white;
+                border-radius: 20px;
+                padding: 20px;
+                text-align: center;
+                transition: all 0.3s;
+                box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+                position: relative;
+                overflow: hidden;
+            }
+            .stat-card-user:hover {
+                transform: translateY(-5px);
+                box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+            }
+            .stat-icon {
+                width: 50px;
+                height: 50px;
+                border-radius: 15px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                margin-bottom: 12px;
+            }
+            .progress-ring {
+                position: relative;
+                width: 100px;
+                height: 100px;
+                margin: 0 auto 15px;
+            }
+            .quick-action-btn {
+                background: #f8f9fa;
+                border: 1px solid #e0e0e0;
+                border-radius: 16px;
+                padding: 15px;
+                text-align: center;
+                transition: all 0.3s;
+                cursor: pointer;
+            }
+            .quick-action-btn:hover {
+                transform: translateY(-3px);
+                border-color: #ff862d;
+                box-shadow: 0 5px 15px rgba(255,134,45,0.1);
+            }
+            .activity-timeline {
+                position: relative;
+                padding-left: 30px;
+            }
+            .activity-timeline::before {
+                content: '';
+                position: absolute;
+                left: 10px;
+                top: 0;
+                bottom: 0;
+                width: 2px;
+                background: linear-gradient(180deg, #ff862d, #01605a);
+            }
+            .timeline-item {
+                position: relative;
+                margin-bottom: 20px;
+                padding-bottom: 15px;
+                border-bottom: 1px solid #f0f0f0;
+            }
+            .timeline-dot {
+                position: absolute;
+                left: -26px;
+                top: 0;
+                width: 12px;
+                height: 12px;
+                border-radius: 50%;
+                background: #ff862d;
+                border: 2px solid white;
+                box-shadow: 0 0 0 2px #ff862d;
+            }
+            .payment-card {
+                background: #f8f9fa;
+                border-radius: 16px;
+                padding: 15px;
+                margin-bottom: 12px;
+                transition: all 0.3s;
+            }
+            .payment-card:hover {
+                background: white;
+                box-shadow: 0 5px 15px rgba(0,0,0,0.08);
+            }
+            @keyframes float {
+                0%, 100% { transform: translateY(0); }
+                50% { transform: translateY(-10px); }
+            }
+            .floating-icon {
+                animation: float 3s ease-in-out infinite;
+            }
+            .greeting {
+                font-size: 24px;
+                font-weight: 700;
+                margin-bottom: 8px;
+            }
+            .date-display {
+                font-size: 14px;
+                opacity: 0.8;
+            }
+        </style>
         
-        <div class="card">
-            <h2>My Activities</h2>
-            <div class="activity-grid">
-                ${userActivities.map(a => {
-                    const balance = a.memberData.amountOwed - a.memberData.amountPaid;
-                    const paidPercent = a.memberData.amountOwed > 0 ? (a.memberData.amountPaid / a.memberData.amountOwed * 100).toFixed(0) : 0;
-                    return `
-                        <div class="activity-card">
-                            <h3>${a.name} ${a.status === 'completed' ? '✅' : ''}</h3>
-                            ${a.status === 'completed' ? '<div class="completion-notification"><i class="fas fa-check-circle"></i> Activity Completed! 🎉</div>' : ''}
-                            <p><strong>💰 Total Budget:</strong> UGX ${(a.totalBudget || 0).toLocaleString()}</p>
-                            <p><strong>👤 My Share:</strong> UGX ${a.memberData.amountOwed.toLocaleString()}</p>
-                            <p><strong>✅ I've Paid:</strong> UGX ${a.memberData.amountPaid.toLocaleString()}</p>
-                            ${a.memberData.adjustmentAmount ? `<p><strong>⚙️ Adjustment:</strong> UGX ${a.memberData.adjustmentAmount.toLocaleString()}</p>` : ''}
-                            <div class="progress-bar-container"><div class="progress-bar" style="width:${paidPercent}%">${paidPercent}% paid</div></div>
-                            ${balance === 0 ? '<span class="paid-status">✅ Fully paid! Great job! 🎉</span>' : `<span class="unpaid-status">❌ Pending: UGX ${balance.toLocaleString()}</span>`}
-                        </div>
-                    `;
-                }).join('') || '<p style="text-align:center; padding: 40px;">No activities assigned to you yet.</p>'}
+        <!-- Welcome Card -->
+        <div class="welcome-card">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 20px;">
+                <div>
+                    <div class="greeting">
+                        👋 Hello, ${_currentUser.name}!
+                    </div>
+                    <div class="date-display">
+                        ${new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+                    </div>
+                    <div style="margin-top: 15px;">
+                        <span style="background: rgba(255,255,255,0.2); padding: 5px 12px; border-radius: 20px; font-size: 12px;">
+                            ${position?.position_name || 'Family Member'}
+                        </span>
+                        ${currentMember?.board_position ? `<span style="background: rgba(255,255,255,0.2); padding: 5px 12px; border-radius: 20px; font-size: 12px; margin-left: 8px;">
+                            ${currentMember.board_position}
+                        </span>` : ''}
+                    </div>
+                </div>
+                <div class="floating-icon" style="font-size: 60px;">
+                    ${currentMember?.profile_picture ? 
+                        `<img src="${currentMember.profile_picture}" style="width: 80px; height: 80px; border-radius: 50%; object-fit: cover; border: 3px solid white;">` : 
+                        '<i class="fas fa-hand-holding-heart"></i>'
+                    }
+                </div>
             </div>
         </div>
         
-        <div class="card">
-            <h2><i class="fas fa-info-circle"></i> Quick Info</h2>
-            <div style="text-align: center; padding: 20px;">
-                <i class="fas fa-hand-holding-heart" style="font-size: 48px; color: var(--primary-orange); margin-bottom: 15px; display: block;"></i>
-                <p>Use the <strong>Contacts</strong> page to view family member contact information.</p>
-                <p>Use the <strong>Reports</strong> page to see your payment summary.</p>
-                <button class="btn-primary" onclick="switchPage('contacts')" style="margin-top: 15px;">
-                    <i class="fas fa-address-book"></i> Go to Contacts
-                </button>
+        <!-- Stats Cards -->
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 24px;">
+            <div class="stat-card-user" onclick="switchPage('myactivities')">
+                <div class="stat-icon" style="background: #fee2e2; color: #e74c3c;">
+                    <i class="fas fa-coins" style="font-size: 24px;"></i>
+                </div>
+                <div style="font-size: 13px; color: #666; margin-bottom: 5px;">Total Owed</div>
+                <div style="font-size: 24px; font-weight: 700; color: #e74c3c;">UGX ${userStats.totalOwed.toLocaleString()}</div>
+                <div style="font-size: 11px; color: #999; margin-top: 5px;">Click to view activities</div>
+            </div>
+            <div class="stat-card-user" onclick="switchPage('myactivities')">
+                <div class="stat-icon" style="background: #d1fae5; color: #27ae60;">
+                    <i class="fas fa-check-circle" style="font-size: 24px;"></i>
+                </div>
+                <div style="font-size: 13px; color: #666; margin-bottom: 5px;">Total Paid</div>
+                <div style="font-size: 24px; font-weight: 700; color: #27ae60;">UGX ${userStats.totalPaid.toLocaleString()}</div>
+                <div style="font-size: 11px; color: #999; margin-top: 5px;">${progressPercent}% completion</div>
+            </div>
+            <div class="stat-card-user">
+                <div class="stat-icon" style="background: #ffedd5; color: #f59e0b;">
+                    <i class="fas fa-scale-balanced" style="font-size: 24px;"></i>
+                </div>
+                <div style="font-size: 13px; color: #666; margin-bottom: 5px;">Balance</div>
+                <div style="font-size: 24px; font-weight: 700; color: ${userStats.balance === 0 ? '#27ae60' : '#e74c3c'};">UGX ${Math.abs(userStats.balance).toLocaleString()}</div>
+                <div style="font-size: 11px; color: #999; margin-top: 5px;">${userStats.balance === 0 ? 'All settled! 🎉' : (userStats.balance > 0 ? 'Pending payment' : 'Overpaid')}</div>
+            </div>
+            <div class="stat-card-user" onclick="switchPage('myactivities')">
+                <div class="stat-icon" style="background: #e0e7ff; color: #3b82f6;">
+                    <i class="fas fa-list" style="font-size: 24px;"></i>
+                </div>
+                <div style="font-size: 13px; color: #666; margin-bottom: 5px;">Active Activities</div>
+                <div style="font-size: 24px; font-weight: 700; color: #3b82f6;">${userActivities.length}</div>
+                <div style="font-size: 11px; color: #999; margin-top: 5px;">${userActivities.filter(a => a.status === 'completed').length} completed</div>
+            </div>
+        </div>
+        
+        <!-- Progress Section -->
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; margin-bottom: 24px;">
+            <!-- Payment Progress Card -->
+            <div class="card" style="padding: 20px;">
+                <h3 style="margin-bottom: 15px; font-size: 16px;">
+                    <i class="fas fa-chart-pie" style="color: #ff862d; margin-right: 8px;"></i> My Payment Progress
+                </h3>
+                <div style="position: relative; width: 150px; height: 150px; margin: 0 auto 15px;">
+                    <svg width="150" height="150" viewBox="0 0 120 120">
+                        <circle cx="60" cy="60" r="54" fill="none" stroke="#e0e0e0" stroke-width="12"/>
+                        <circle cx="60" cy="60" r="54" fill="none" stroke="#27ae60" stroke-width="12" 
+                                stroke-dasharray="${2 * Math.PI * 54}" stroke-dashoffset="${2 * Math.PI * 54 * (1 - progressPercent / 100)}"
+                                stroke-linecap="round" transform="rotate(-90 60 60)" style="transition: stroke-dashoffset 1s ease;"/>
+                        <text x="60" y="65" text-anchor="middle" dominant-baseline="middle" font-size="20" font-weight="bold" fill="#333">${progressPercent}%</text>
+                    </svg>
+                </div>
+                <div style="text-align: center;">
+                    <div style="font-size: 13px; color: #666;">You have paid <strong>${progressPercent}%</strong> of your total contributions</div>
+                    <div style="font-size: 12px; color: #999; margin-top: 8px;">
+                        <span style="display: inline-block; width: 10px; height: 10px; background: #27ae60; border-radius: 50%; margin-right: 5px;"></span> Paid: UGX ${userStats.totalPaid.toLocaleString()}
+                        <span style="display: inline-block; width: 10px; height: 10px; background: #e74c3c; border-radius: 50%; margin: 0 5px 0 10px;"></span> Remaining: UGX ${userStats.balance.toLocaleString()}
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Quick Actions -->
+            <div class="card" style="padding: 20px;">
+                <h3 style="margin-bottom: 15px; font-size: 16px;">
+                    <i class="fas fa-bolt" style="color: #ff862d; margin-right: 8px;"></i> Quick Actions
+                </h3>
+                <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px;">
+                    <div class="quick-action-btn" onclick="switchPage('myactivities')">
+                        <i class="fas fa-list" style="font-size: 24px; color: #3b82f6; margin-bottom: 8px; display: block;"></i>
+                        <span style="font-size: 13px; font-weight: 500;">My Activities</span>
+                    </div>
+                    <div class="quick-action-btn" onclick="switchPage('payments')">
+                        <i class="fas fa-history" style="font-size: 24px; color: #27ae60; margin-bottom: 8px; display: block;"></i>
+                        <span style="font-size: 13px; font-weight: 500;">Payment History</span>
+                    </div>
+                    <div class="quick-action-btn" onclick="switchPage('contacts')">
+                        <i class="fas fa-address-book" style="font-size: 24px; color: #f59e0b; margin-bottom: 8px; display: block;"></i>
+                        <span style="font-size: 13px; font-weight: 500;">Family Contacts</span>
+                    </div>
+                    <div class="quick-action-btn" onclick="switchPage('reports')">
+                        <i class="fas fa-chart-bar" style="font-size: 24px; color: #8b5cf6; margin-bottom: 8px; display: block;"></i>
+                        <span style="font-size: 13px; font-weight: 500;">My Reports</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Recent Activities Timeline -->
+        <div class="card" style="padding: 20px;">
+            <h3 style="margin-bottom: 15px; font-size: 16px;">
+                <i class="fas fa-clock" style="color: #ff862d; margin-right: 8px;"></i> Recent Activities
+                <a href="#" onclick="switchPage('myactivities'); return false;" style="float: right; font-size: 12px; color: #ff862d;">View all →</a>
+            </h3>
+            ${recentActivities.length > 0 ? `
+                <div class="activity-timeline">
+                    ${recentActivities.map(a => {
+                        const balance = a.memberData.amountOwed - a.memberData.amountPaid;
+                        const statusIcon = balance === 0 ? '✅' : '⏳';
+                        const statusText = balance === 0 ? 'Completed' : 'In Progress';
+                        return `
+                            <div class="timeline-item" onclick="showActivityDetails(${a.id})" style="cursor: pointer;">
+                                <div class="timeline-dot"></div>
+                                <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+                                    <div>
+                                        <div style="font-weight: 600; margin-bottom: 4px;">${a.name}</div>
+                                        <div style="font-size: 12px; color: #666;">Due: ${new Date(a.expectedCompletionDate).toLocaleDateString()}</div>
+                                    </div>
+                                    <div style="text-align: right;">
+                                        <div style="font-size: 14px; font-weight: 600; color: ${balance === 0 ? '#27ae60' : '#e74c3c'};">${statusIcon} ${statusText}</div>
+                                        <div style="font-size: 12px;">Balance: UGX ${balance.toLocaleString()}</div>
+                                    </div>
+                                </div>
+                                <div style="margin-top: 8px; background: #e0e0e0; border-radius: 10px; height: 6px; overflow: hidden;">
+                                    <div style="width: ${a.memberData.amountOwed > 0 ? (a.memberData.amountPaid / a.memberData.amountOwed * 100) : 0}%; height: 100%; background: linear-gradient(90deg, #27ae60, #01605a); border-radius: 10px;"></div>
+                                </div>
+                            </div>
+                        `;
+                    }).join('')}
+                </div>
+            ` : '<div style="text-align: center; padding: 30px; color: #999;">No activities assigned yet.</div>'}
+        </div>
+        
+        <!-- Recent Payments -->
+        <div class="card" style="padding: 20px;">
+            <h3 style="margin-bottom: 15px; font-size: 16px;">
+                <i class="fas fa-receipt" style="color: #ff862d; margin-right: 8px;"></i> Recent Payments
+                <a href="#" onclick="switchPage('payments'); return false;" style="float: right; font-size: 12px; color: #ff862d;">View all →</a>
+            </h3>
+            ${recentPayments.length > 0 ? `
+                <div>
+                    ${recentPayments.slice(0, 5).map(p => `
+                        <div class="payment-card" style="cursor: default;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+                                <div>
+                                    <div style="font-weight: 600; margin-bottom: 4px;">${p.activityName}</div>
+                                    <div style="font-size: 11px; color: #999;">${new Date(p.payment_date).toLocaleDateString()}</div>
+                                </div>
+                                <div>
+                                    <span style="background: #d1fae5; color: #27ae60; padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 500;">
+                                        +UGX ${p.amount.toLocaleString()}
+                                    </span>
+                                </div>
+                            </div>
+                            ${p.notes ? `<div style="font-size: 11px; color: #666; margin-top: 8px; padding-top: 8px; border-top: 1px solid #f0f0f0;">📝 ${p.notes}</div>` : ''}
+                        </div>
+                    `).join('')}
+                </div>
+            ` : '<div style="text-align: center; padding: 30px; color: #999;">No payment history yet.</div>'}
+        </div>
+        
+        <!-- Family Info Footer -->
+        <div style="background: white; border-radius: 20px; padding: 20px; margin-top: 20px; text-align: center;">
+            <div style="display: flex; justify-content: center; gap: 30px; flex-wrap: wrap;">
+                ${familyHead ? `
+                    <div>
+                        <i class="fas fa-crown" style="font-size: 24px; color: #ff862d;"></i>
+                        <div style="font-size: 12px; color: #666; margin-top: 5px;">Family Head</div>
+                        <div style="font-weight: 600;">${familyHead.name}</div>
+                    </div>
+                ` : ''}
+                ${treasurer ? `
+                    <div>
+                        <i class="fas fa-calculator" style="font-size: 24px; color: #01605a;"></i>
+                        <div style="font-size: 12px; color: #666; margin-top: 5px;">Treasurer</div>
+                        <div style="font-weight: 600;">${treasurer.name}</div>
+                    </div>
+                ` : ''}
+                <div>
+                    <i class="fas fa-calendar-alt" style="font-size: 24px; color: #8b5cf6;"></i>
+                    <div style="font-size: 12px; color: #666; margin-top: 5px;">Member Since</div>
+                    <div style="font-weight: 600;">${currentMember?.join_date ? new Date(currentMember.join_date).toLocaleDateString() : 'Recently'}</div>
+                </div>
             </div>
         </div>
     `;
 }
-
 // ============================================
 // FIXED CONTACTS PAGE - LIMITED INFO FOR USERS
 // ============================================
@@ -2571,7 +2872,7 @@ async function renderContacts() {
         document.getElementById('pageContent').innerHTML = `
             <div class="card">
                 <h2><i class="fas fa-address-book"></i> Contacts</h2>
-                <div style="text-align:center;padding:40px">
+                <div style="text-align:center;padding:30px">
                     <i class="fas fa-users" style="font-size:48px;color:var(--gray-400);margin-bottom:16px;display:block;"></i>
                     <p>No contacts yet. Add family members.</p>
                     ${_currentRole === 'admin' ? '<button class="btn-primary" onclick="switchPage(\'members\')" style="margin-top:16px;">Add Members →</button>' : ''}
@@ -2581,104 +2882,423 @@ async function renderContacts() {
         return;
     }
     
-    // For regular users, only show limited info (no medical, no payment details)
+    // Sort members: Current user first, then board members, then parents, then others
+    const sortedMembers = [...members].sort((a, b) => {
+        if (_currentRole === 'user') {
+            if (a.id === _currentUser.id) return -1;
+            if (b.id === _currentUser.id) return 1;
+        }
+        const order = { board: 1, parent: 2, regular: 3, dependent: 4 };
+        return (order[a.member_type] || 5) - (order[b.member_type] || 5);
+    });
+    
+    // ============================================
+    // USER VIEW - Compact Table with Photos
+    // ============================================
     if (_currentRole === 'user') {
         document.getElementById('pageContent').innerHTML = `
-            <div class="card">
-                <h2><i class="fas fa-address-book"></i> Family Contacts</h2>
-                <p style="margin-bottom: 15px; color: var(--gray-600);">
-                    <i class="fas fa-info-circle"></i> Contact information for family members
-                </p>
-                <div class="members-table-container">
-                    <table class="members-table" style="width: 100%;">
-                        <thead>
-                            <tr>
-                                <th>Name</th>
-                                <th>Role</th>
-                                <th>Phone</th>
-                                <th>Email</th>
-                                <th>Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${members.map(m => `
-                                <tr>
-                                    <td class="member-name-cell">${m.name} ${m.id === _currentUser.id ? '<span style="background:var(--success);padding:2px 8px;border-radius:20px;font-size:10px;margin-left:5px;">You</span>' : ''}</td>
-                                    <td><span class="member-type-badge member-type-${m.member_type}">${m.member_type === 'board' ? 'Board Member' : (m.member_type === 'parent' ? 'Parent' : (m.member_type === 'child' ? 'Child' : 'Dependent'))}</span></td>
-                                    <td>${m.phone || '—'}</td>
-                                    <td>${m.email || '—'}</td>
+            <style>
+                .user-contacts-wrapper {
+                    background: white;
+                    border-radius: 16px;
+                    overflow-x: auto;
+                    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+                }
+                .user-contacts-table {
+                    width: 100%;
+                    border-collapse: collapse;
+                    min-width: 650px;
+                    font-size: 13px;
+                }
+                .user-contacts-table th {
+                    background: linear-gradient(135deg, #01605a, #0a7a72);
+                    color: white;
+                    padding: 10px 8px;
+                    font-weight: 500;
+                    font-size: 12px;
+                    text-align: left;
+                }
+                .user-contacts-table td {
+                    padding: 8px;
+                    border-bottom: 1px solid #f0f0f0;
+                    vertical-align: middle;
+                }
+                .user-contacts-table tr:hover {
+                    background: #f8f9fa;
+                }
+                .user-avatar {
+                    width: 32px;
+                    height: 32px;
+                    border-radius: 50%;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    background: linear-gradient(135deg, #ff862d, #01605a);
+                    font-size: 14px;
+                    color: white;
+                }
+                .user-avatar img {
+                    width: 100%;
+                    height: 100%;
+                    border-radius: 50%;
+                    object-fit: cover;
+                }
+                .user-name {
+                    font-weight: 600;
+                    color: #333;
+                }
+                .user-role-badge {
+                    display: inline-block;
+                    padding: 2px 8px;
+                    border-radius: 12px;
+                    font-size: 9px;
+                    font-weight: 500;
+                }
+                .user-role-badge.board { background: #ff862d20; color: #ff862d; }
+                .user-role-badge.parent { background: #27ae6020; color: #27ae60; }
+                .user-role-badge.regular { background: #3b82f620; color: #3b82f6; }
+                .user-role-badge.dependent { background: #e74c3c20; color: #e74c3c; }
+                .user-you-tag {
+                    background: #27ae60;
+                    color: white;
+                    padding: 2px 6px;
+                    border-radius: 10px;
+                    font-size: 8px;
+                    font-weight: 600;
+                    margin-left: 6px;
+                }
+                .user-action-group {
+                    display: flex;
+                    gap: 4px;
+                    flex-wrap: nowrap;
+                }
+                .user-action-btn {
+                    width: 28px;
+                    height: 28px;
+                    border-radius: 6px;
+                    border: none;
+                    cursor: pointer;
+                    display: inline-flex;
+                    align-items: center;
+                    justify-content: center;
+                    font-size: 12px;
+                    transition: all 0.2s;
+                }
+                .user-action-btn.whatsapp { background: #25D366; color: white; }
+                .user-action-btn.call { background: #3b82f6; color: white; }
+                .user-action-btn.sms { background: #f59e0b; color: white; }
+                .user-action-btn:hover { transform: scale(1.03); opacity: 0.9; }
+                .user-contact-header {
+                    background: linear-gradient(135deg, #01605a, #0a7a72);
+                    border-radius: 16px;
+                    padding: 15px 20px;
+                    margin-bottom: 20px;
+                    color: white;
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    flex-wrap: wrap;
+                    gap: 10px;
+                }
+                .user-phone {
+                    font-family: monospace;
+                    font-size: 12px;
+                }
+                .user-email, .user-location {
+                    font-size: 11px;
+                    color: #666;
+                    max-width: 150px;
+                    white-space: nowrap;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                }
+                @media (max-width: 768px) {
+                    .user-contacts-table th, .user-contacts-table td {
+                        padding: 6px;
+                        font-size: 11px;
+                    }
+                    .user-avatar {
+                        width: 28px;
+                        height: 28px;
+                        font-size: 12px;
+                    }
+                    .user-action-btn {
+                        width: 24px;
+                        height: 24px;
+                        font-size: 10px;
+                    }
+                    .user-email, .user-location {
+                        max-width: 100px;
+                    }
+                }
+            </style>
+            
+            <div class="user-contact-header">
+                <div>
+                    <h3 style="color: white; margin-bottom: 2px; font-size: 18px;">
+                        <i class="fas fa-address-book"></i> Family Contacts
+                    </h3>
+                    <p style="opacity: 0.85; font-size: 12px; margin: 0;">${members.length} members</p>
+                </div>
+                <i class="fas fa-users" style="font-size: 32px; opacity: 0.7;"></i>
+            </div>
+            
+            <div class="user-contacts-wrapper">
+                <table class="user-contacts-table">
+                    <thead>
+                        <tr>
+                            <th style="width: 45px;">Photo</th>
+                            <th>Name</th>
+                            <th style="width: 90px;">Role</th>
+                            <th>Phone</th>
+                            <th>Email</th>
+                            <th>Location</th>
+                            <th style="width: 90px;">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${sortedMembers.map(m => {
+                            let avatarContent = '';
+                            if (m.profile_picture) {
+                                avatarContent = `<img src="${m.profile_picture}" alt="${m.name}" onerror="this.src='https://placehold.co/32x32/01605a/white?text=📷'">`;
+                            } else {
+                                let icon = '👤';
+                                if (m.member_type === 'board') icon = '👑';
+                                else if (m.member_type === 'parent') icon = '👨‍👩';
+                                else if (m.member_type === 'dependent') icon = '👶';
+                                avatarContent = `<span>${icon}</span>`;
+                            }
+                            
+                            let roleDisplay = '';
+                            let roleClass = '';
+                            if (m.member_type === 'board') { roleDisplay = 'Board'; roleClass = 'board'; }
+                            else if (m.member_type === 'parent') { roleDisplay = 'Parent'; roleClass = 'parent'; }
+                            else if (m.member_type === 'regular') { roleDisplay = 'Member'; roleClass = 'regular'; }
+                            else { roleDisplay = 'Dependent'; roleClass = 'dependent'; }
+                            
+                            return `
+                                <tr onclick="showMemberDetails(${m.id})" style="cursor: pointer;">
                                     <td>
-                                        <div class="contact-icons">
-                                            ${m.phone ? `
-                                                <button class="contact-icon-btn whatsapp" onclick="sendWhatsApp('${m.phone}', 'Hello ${m.name} from OBUNANGWE BULAIIRE!')" title="WhatsApp">
-                                                    <i class="fab fa-whatsapp"></i> WhatsApp
-                                                </button>
-                                                <button class="contact-icon-btn call" onclick="makeCall('${m.phone}')" title="Call">
-                                                    <i class="fas fa-phone"></i> Call
-                                                </button>
-                                                <button class="contact-icon-btn sms" onclick="sendSMS('${m.phone}', 'Hello from OBUNANGWE BULAIIRE!')" title="SMS">
-                                                    <i class="fas fa-comment"></i> SMS
-                                                </button>
-                                            ` : '<span class="member-tooltip">No contact</span>'}
+                                        <div class="user-avatar">
+                                            ${avatarContent}
                                         </div>
                                     </td>
-                                </tr>
-                            `).join('')}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        `;
-    } 
-    // For admin, show full details
-    else {
-        document.getElementById('pageContent').innerHTML = `
-            <div class="card">
-                <h2><i class="fas fa-address-book"></i> Contacts Directory</h2>
-                <div class="members-table-container">
-                    <table class="members-table" style="width: 100%;">
-                        <thead>
-                            <tr>
-                                <th>Photo</th>
-                                <th>Name</th>
-                                <th>Type</th>
-                                <th>Phone</th>
-                                <th>Email</th>
-                                <th>Location</th>
-                                <th>Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${members.map(m => `
-                                <tr onclick="showMemberDetails(${m.id})" style="cursor:pointer">
-                                    <td>${m.profile_picture ? `<img src="${m.profile_picture}" class="member-avatar-table">` : `<div class="member-avatar-placeholder"><i class="fas ${m.member_type === 'board' ? 'fa-crown' : (m.member_type === 'parent' ? 'fa-user-tie' : 'fa-user-child')}"></i></div>`}</td>
-                                    <td class="member-name-cell">${m.name}${m.id === _currentUser?.id ? ' (You)' : ''}</td>
-                                    <td><span class="member-type-badge member-type-${m.member_type}">${m.member_type === 'board' ? 'Board' : (m.member_type === 'parent' ? 'Parent' : (m.member_type === 'child' ? 'Child' : 'Dependent'))}</span></td>
-                                    <td>${m.phone || '—'}</td>
-                                    <td>${m.email || '—'}</td>
-                                    <td>${m.location || '—'}</td>
-                                    <td>
-                                        <div class="contact-icons" onclick="event.stopPropagation()">
+                                    <td class="user-name">
+                                        ${m.name}
+                                        ${m.id === _currentUser.id ? '<span class="user-you-tag">You</span>' : ''}
+                                        ${m.board_position ? `<div style="font-size: 9px; color: #ff862d;">${m.board_position}</div>` : ''}
+                                    </td>
+                                    <td><span class="user-role-badge ${roleClass}">${roleDisplay}</span></td>
+                                    <td class="user-phone">${m.phone || '—'}</td>
+                                    <td class="user-email" title="${m.email || ''}">${m.email ? (m.email.length > 20 ? m.email.substring(0, 18) + '…' : m.email) : '—'}</div>
+                                    <td class="user-location" title="${m.location || ''}">${m.location ? (m.location.length > 15 ? m.location.substring(0, 13) + '…' : m.location) : '—'}</div>
+                                    <td onclick="event.stopPropagation()">
+                                        <div class="user-action-group">
                                             ${m.phone ? `
-                                                <button class="contact-icon-btn whatsapp" onclick="sendWhatsApp('${m.phone}', 'Hello ${m.name} from OBUNANGWE BULAIIRE!')" title="WhatsApp">
+                                                <button class="user-action-btn whatsapp" onclick="sendWhatsApp('${m.phone}', 'Hello ${m.name} from OBUNANGWE BULAIIRE!')" title="WhatsApp">
                                                     <i class="fab fa-whatsapp"></i>
                                                 </button>
-                                                <button class="contact-icon-btn call" onclick="makeCall('${m.phone}')" title="Call">
+                                                <button class="user-action-btn call" onclick="makeCall('${m.phone}')" title="Call">
                                                     <i class="fas fa-phone"></i>
                                                 </button>
-                                            ` : '—'}
+                                                <button class="user-action-btn sms" onclick="sendSMS('${m.phone}', 'Hello from OBUNANGWE BULAIIRE!')" title="SMS">
+                                                    <i class="fas fa-comment"></i>
+                                                </button>
+                                            ` : '<span style="font-size: 11px; color: #ccc;">—</span>'}
                                         </div>
                                     </td>
                                 </tr>
-                            `).join('')}
-                        </tbody>
-                    </table>
-                </div>
+                            `;
+                        }).join('')}
+                    </tbody>
+                </table>
+            </div>
+        `;
+    }
+    
+    // ============================================
+    // ADMIN VIEW - Compact Table with Edit Controls
+    // ============================================
+    else {
+        document.getElementById('pageContent').innerHTML = `
+            <style>
+                .admin-contacts-wrapper {
+                    background: white;
+                    border-radius: 16px;
+                    overflow-x: auto;
+                    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+                }
+                .admin-contacts-table {
+                    width: 100%;
+                    border-collapse: collapse;
+                    min-width: 750px;
+                    font-size: 13px;
+                }
+                .admin-contacts-table th {
+                    background: linear-gradient(135deg, #01605a, #0a7a72);
+                    color: white;
+                    padding: 10px 8px;
+                    font-weight: 500;
+                    font-size: 12px;
+                    text-align: left;
+                }
+                .admin-contacts-table td {
+                    padding: 8px;
+                    border-bottom: 1px solid #f0f0f0;
+                    vertical-align: middle;
+                }
+                .admin-contacts-table tr:hover {
+                    background: #f8f9fa;
+                }
+                .admin-avatar {
+                    width: 32px;
+                    height: 32px;
+                    border-radius: 50%;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    background: linear-gradient(135deg, #ff862d, #01605a);
+                    font-size: 14px;
+                    color: white;
+                }
+                .admin-avatar img {
+                    width: 100%;
+                    height: 100%;
+                    border-radius: 50%;
+                    object-fit: cover;
+                }
+                .admin-role-badge {
+                    display: inline-block;
+                    padding: 2px 8px;
+                    border-radius: 12px;
+                    font-size: 9px;
+                    font-weight: 500;
+                }
+                .admin-role-badge.board { background: #ff862d20; color: #ff862d; }
+                .admin-role-badge.parent { background: #27ae6020; color: #27ae60; }
+                .admin-role-badge.regular { background: #3b82f620; color: #3b82f6; }
+                .admin-role-badge.dependent { background: #e74c3c20; color: #e74c3c; }
+                .admin-action-group {
+                    display: flex;
+                    gap: 4px;
+                    flex-wrap: nowrap;
+                }
+                .admin-action-btn {
+                    width: 28px;
+                    height: 28px;
+                    border-radius: 6px;
+                    border: none;
+                    cursor: pointer;
+                    display: inline-flex;
+                    align-items: center;
+                    justify-content: center;
+                    font-size: 12px;
+                    transition: all 0.2s;
+                }
+                .admin-action-btn.whatsapp { background: #25D366; color: white; }
+                .admin-action-btn.call { background: #3b82f6; color: white; }
+                .admin-action-btn.edit { background: #ff862d; color: white; }
+                .admin-action-btn.delete { background: #e74c3c; color: white; }
+                .admin-action-btn:hover { transform: scale(1.03); opacity: 0.9; }
+                .admin-contact-header {
+                    margin-bottom: 20px;
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    flex-wrap: wrap;
+                    gap: 10px;
+                }
+                .admin-phone {
+                    font-family: monospace;
+                    font-size: 12px;
+                }
+            </style>
+            
+            <div class="admin-contact-header">
+                <h3 style="color: var(--primary-teal); font-size: 18px;">
+                    <i class="fas fa-address-book"></i> Contacts Directory
+                    <span style="font-size: 12px; color: #666; margin-left: 8px;">${members.length} members</span>
+                </h3>
+                <button class="btn-primary" onclick="openAddModal()" style="padding: 6px 14px; font-size: 12px;">
+                    <i class="fas fa-plus"></i> Add Member
+                </button>
+            </div>
+            
+            <div class="admin-contacts-wrapper">
+                <table class="admin-contacts-table">
+                    <thead>
+                        <tr>
+                            <th style="width: 45px;">Photo</th>
+                            <th>Name</th>
+                            <th style="width: 90px;">Type</th>
+                            <th>Phone</th>
+                            <th>Email</th>
+                            <th>Location</th>
+                            <th style="width: 110px;">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${sortedMembers.map(m => {
+                            let avatarContent = '';
+                            if (m.profile_picture) {
+                                avatarContent = `<img src="${m.profile_picture}" alt="${m.name}" onerror="this.src='https://placehold.co/32x32/01605a/white?text=📷'">`;
+                            } else {
+                                let icon = '👤';
+                                if (m.member_type === 'board') icon = '👑';
+                                else if (m.member_type === 'parent') icon = '👨‍👩';
+                                else if (m.member_type === 'dependent') icon = '👶';
+                                avatarContent = `<span>${icon}</span>`;
+                            }
+                            
+                            let roleDisplay = '';
+                            let roleClass = '';
+                            if (m.member_type === 'board') { roleDisplay = 'Board'; roleClass = 'board'; }
+                            else if (m.member_type === 'parent') { roleDisplay = 'Parent'; roleClass = 'parent'; }
+                            else if (m.member_type === 'regular') { roleDisplay = 'Member'; roleClass = 'regular'; }
+                            else { roleDisplay = 'Dependent'; roleClass = 'dependent'; }
+                            
+                            return `
+                                <tr onclick="showMemberDetails(${m.id})" style="cursor: pointer;">
+                                    <td>
+                                        <div class="admin-avatar">
+                                            ${avatarContent}
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <strong>${m.name}</strong>
+                                        ${m.board_position ? `<div style="font-size: 9px; color: #ff862d;">${m.board_position}</div>` : ''}
+                                    </div>
+                                    <td><span class="admin-role-badge ${roleClass}">${roleDisplay}</span></div>
+                                    <td class="admin-phone">${m.phone || '—'}</div>
+                                    <td style="font-size: 11px; max-width: 150px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${m.email || ''}">${m.email ? (m.email.length > 20 ? m.email.substring(0, 18) + '…' : m.email) : '—'}</div>
+                                    <td style="font-size: 11px; max-width: 120px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${m.location || ''}">${m.location ? (m.location.length > 15 ? m.location.substring(0, 13) + '…' : m.location) : '—'}</div>
+                                    <td onclick="event.stopPropagation()">
+                                        <div class="admin-action-group">
+                                            ${m.phone ? `
+                                                <button class="admin-action-btn whatsapp" onclick="sendWhatsApp('${m.phone}', 'Hello ${m.name} from OBUNANGWE BULAIIRE!')" title="WhatsApp">
+                                                    <i class="fab fa-whatsapp"></i>
+                                                </button>
+                                                <button class="admin-action-btn call" onclick="makeCall('${m.phone}')" title="Call">
+                                                    <i class="fas fa-phone"></i>
+                                                </button>
+                                            ` : ''}
+                                            <button class="admin-action-btn edit" onclick="openEditMember(${m.id})" title="Edit">
+                                                <i class="fas fa-edit"></i>
+                                            </button>
+                                            <button class="admin-action-btn delete" onclick="deleteMember(${m.id})" title="Delete">
+                                                <i class="fas fa-trash"></i>
+                                            </button>
+                                        </div>
+                                    </div>
+                                </tr>
+                            `;
+                        }).join('')}
+                    </tbody>
+                </table>
             </div>
         `;
     }
 }
-
 // ============================================
 // FIXED SHOW MEMBER DETAILS - LIMITED FOR USERS
 // ============================================
