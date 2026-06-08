@@ -2042,6 +2042,7 @@ async function renderPaymentSummary() {
     const members = await getFamilyMembers();
     const payingMembers = members.filter(m => m.member_type === 'board' || m.member_type === 'parent');
     const memberStats = [];
+    
     for (const m of members) {
         const stats = await getUserStatistics(m.id);
         memberStats.push({ ...m, stats });
@@ -2069,18 +2070,286 @@ async function renderPaymentSummary() {
         paymentGroups.get(responsible.id).members.push(member);
     }
     
+    // Get top contributors
+    const topContributors = [...memberStats]
+        .sort((a, b) => (b.stats.totalPaid || 0) - (a.stats.totalPaid || 0))
+        .slice(0, 5);
+    
+    // Get pending payers
+    const pendingPayers = memberStats
+        .filter(m => (m.stats.balance || 0) > 0)
+        .sort((a, b) => (b.stats.balance || 0) - (a.stats.balance || 0))
+        .slice(0, 5);
+    
     document.getElementById('pageContent').innerHTML = `
-        <div class="stats-grid">
-            <div class="stat-card"><div class="stat-number">UGX ${totalOwedAll.toLocaleString()}</div><h3>Total Owed</h3></div>
-            <div class="stat-card"><div class="stat-number">UGX ${totalPaidAll.toLocaleString()}</div><h3>Total Paid</h3></div>
-            <div class="stat-card"><div class="stat-number">UGX ${totalBalanceAll.toLocaleString()}</div><h3>Total Balance</h3></div>
-            <div class="stat-card"><div class="stat-number">${completionRate}%</div><h3>Completion Rate</h3></div>
+        <style>
+            .summary-stats-grid {
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+                gap: 16px;
+                margin-bottom: 24px;
+            }
+            .summary-stat-card {
+                background: white;
+                border-radius: 20px;
+                padding: 20px;
+                text-align: center;
+                position: relative;
+                overflow: hidden;
+                box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+                transition: all 0.3s;
+            }
+            .summary-stat-card:hover {
+                transform: translateY(-3px);
+                box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+            }
+            .summary-stat-icon {
+                position: absolute;
+                right: 15px;
+                top: 15px;
+                font-size: 40px;
+                opacity: 0.1;
+            }
+            .summary-stat-value {
+                font-size: 28px;
+                font-weight: 800;
+                margin-bottom: 5px;
+            }
+            .summary-stat-label {
+                font-size: 12px;
+                color: #666;
+                text-transform: uppercase;
+                letter-spacing: 0.5px;
+            }
+            .progress-circle {
+                width: 120px;
+                height: 120px;
+                margin: 0 auto 15px;
+            }
+            .insight-card {
+                background: white;
+                border-radius: 20px;
+                padding: 20px;
+                margin-bottom: 20px;
+                box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+            }
+            .insight-title {
+                font-size: 16px;
+                font-weight: 600;
+                margin-bottom: 15px;
+                padding-bottom: 10px;
+                border-bottom: 2px solid var(--primary-orange);
+                display: flex;
+                align-items: center;
+                gap: 8px;
+            }
+            .contributor-list {
+                display: flex;
+                flex-direction: column;
+                gap: 12px;
+            }
+            .contributor-item {
+                display: flex;
+                align-items: center;
+                gap: 12px;
+                padding: 8px;
+                background: #f8f9fa;
+                border-radius: 12px;
+                transition: all 0.3s;
+            }
+            .contributor-item:hover {
+                background: #f0f0f0;
+                transform: translateX(5px);
+            }
+            .contributor-rank {
+                width: 30px;
+                height: 30px;
+                background: linear-gradient(135deg, #ff862d, #01605a);
+                color: white;
+                border-radius: 50%;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-weight: bold;
+                font-size: 14px;
+            }
+            .contributor-info {
+                flex: 1;
+            }
+            .contributor-name {
+                font-weight: 600;
+                font-size: 14px;
+            }
+            .contributor-role {
+                font-size: 10px;
+                color: #666;
+            }
+            .contributor-amount {
+                font-weight: 700;
+                color: #27ae60;
+            }
+            .pending-badge {
+                background: #fee2e2;
+                color: #e74c3c;
+                padding: 4px 10px;
+                border-radius: 20px;
+                font-size: 11px;
+                font-weight: 500;
+            }
+            .payment-table-container {
+                overflow-x: auto;
+                border-radius: 16px;
+            }
+            .payment-summary-table {
+                width: 100%;
+                border-collapse: collapse;
+                font-size: 13px;
+            }
+            .payment-summary-table th {
+                background: linear-gradient(135deg, #01605a, #0a7a72);
+                color: white;
+                padding: 12px 10px;
+                font-weight: 600;
+                text-align: left;
+            }
+            .payment-summary-table td {
+                padding: 10px;
+                border-bottom: 1px solid #f0f0f0;
+            }
+            .payment-summary-table tr:hover {
+                background: #f8f9fa;
+            }
+            .status-badge {
+                display: inline-block;
+                padding: 4px 10px;
+                border-radius: 20px;
+                font-size: 11px;
+                font-weight: 500;
+            }
+            .status-settled { background: #d1fae5; color: #27ae60; }
+            .status-pending { background: #fee2e2; color: #e74c3c; }
+            .status-partial { background: #ffedd5; color: #f59e0b; }
+            .progress-bar-mini {
+                width: 100px;
+                height: 6px;
+                background: #e0e0e0;
+                border-radius: 10px;
+                overflow: hidden;
+            }
+            .progress-fill {
+                height: 100%;
+                background: linear-gradient(90deg, #27ae60, #01605a);
+                border-radius: 10px;
+                transition: width 0.5s;
+            }
+            @media (max-width: 768px) {
+                .summary-stats-grid {
+                    grid-template-columns: repeat(2, 1fr);
+                    gap: 12px;
+                }
+                .summary-stat-value {
+                    font-size: 22px;
+                }
+                .insight-card {
+                    padding: 15px;
+                }
+            }
+        </style>
+        
+        <!-- Stats Grid -->
+        <div class="summary-stats-grid">
+            <div class="summary-stat-card">
+                <div class="summary-stat-icon"><i class="fas fa-users"></i></div>
+                <div class="summary-stat-value">${members.length}</div>
+                <div class="summary-stat-label">Total Members</div>
+            </div>
+            <div class="summary-stat-card">
+                <div class="summary-stat-icon"><i class="fas fa-coins"></i></div>
+                <div class="summary-stat-value">UGX ${totalOwedAll.toLocaleString()}</div>
+                <div class="summary-stat-label">Total Owed</div>
+            </div>
+            <div class="summary-stat-card">
+                <div class="summary-stat-icon"><i class="fas fa-check-circle"></i></div>
+                <div class="summary-stat-value">UGX ${totalPaidAll.toLocaleString()}</div>
+                <div class="summary-stat-label">Total Paid</div>
+            </div>
+            <div class="summary-stat-card">
+                <div class="summary-stat-icon"><i class="fas fa-chart-line"></i></div>
+                <div class="summary-stat-value">${completionRate}%</div>
+                <div class="summary-stat-label">Completion Rate</div>
+            </div>
         </div>
         
-        <div class="card">
-            <h2>💰 Payment Summary by Responsible Person</h2>
-            <div class="members-table-container">
-                <table class="members-table">
+        <!-- Progress Ring and Quick Insights -->
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; margin-bottom: 24px;">
+            <!-- Progress Ring Card -->
+            <div class="insight-card" style="text-align: center;">
+                <div class="progress-circle">
+                    <svg width="120" height="120" viewBox="0 0 120 120">
+                        <circle cx="60" cy="60" r="54" fill="none" stroke="#e0e0e0" stroke-width="12"/>
+                        <circle cx="60" cy="60" r="54" fill="none" stroke="#27ae60" stroke-width="12" 
+                                stroke-dasharray="${2 * Math.PI * 54}" stroke-dashoffset="${2 * Math.PI * 54 * (1 - completionRate / 100)}"
+                                stroke-linecap="round" transform="rotate(-90 60 60)" style="transition: stroke-dashoffset 1s ease;"/>
+                        <text x="60" y="65" text-anchor="middle" dominant-baseline="middle" font-size="20" font-weight="bold" fill="#333">${completionRate}%</text>
+                    </svg>
+                </div>
+                <div style="margin-top: 10px;">
+                    <div style="font-size: 13px; color: #666;">Overall Payment Progress</div>
+                    <div style="font-size: 12px; margin-top: 8px;">
+                        <span style="display: inline-block; width: 10px; height: 10px; background: #27ae60; border-radius: 50%; margin-right: 5px;"></span> Paid: UGX ${totalPaidAll.toLocaleString()}
+                        <span style="display: inline-block; width: 10px; height: 10px; background: #e74c3c; border-radius: 50%; margin: 0 5px 0 10px;"></span> Pending: UGX ${totalBalanceAll.toLocaleString()}
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Top Contributors -->
+            <div class="insight-card">
+                <div class="insight-title">
+                    <i class="fas fa-trophy" style="color: #ff862d;"></i> Top Contributors
+                </div>
+                <div class="contributor-list">
+                    ${topContributors.map((m, index) => `
+                        <div class="contributor-item" onclick="showMemberDetails(${m.id})" style="cursor: pointer;">
+                            <div class="contributor-rank">${index + 1}</div>
+                            <div class="contributor-info">
+                                <div class="contributor-name">${m.name}</div>
+                                <div class="contributor-role">${m.member_type === 'board' ? 'Board Member' : (m.member_type === 'parent' ? 'Parent' : 'Member')}</div>
+                            </div>
+                            <div class="contributor-amount">UGX ${(m.stats.totalPaid || 0).toLocaleString()}</div>
+                        </div>
+                    `).join('')}
+                    ${topContributors.length === 0 ? '<div style="text-align:center; padding:20px; color:#999;">No contributions yet</div>' : ''}
+                </div>
+            </div>
+            
+            <!-- Pending Payments -->
+            <div class="insight-card">
+                <div class="insight-title">
+                    <i class="fas fa-clock" style="color: #e74c3c;"></i> Pending Payments
+                </div>
+                <div class="contributor-list">
+                    ${pendingPayers.map((m) => `
+                        <div class="contributor-item" onclick="showMemberDetails(${m.id})" style="cursor: pointer;">
+                            <div class="contributor-rank" style="background: #e74c3c;"><i class="fas fa-exclamation" style="font-size: 12px;"></i></div>
+                            <div class="contributor-info">
+                                <div class="contributor-name">${m.name}</div>
+                                <div class="contributor-role">${m.member_type === 'board' ? 'Board Member' : (m.member_type === 'parent' ? 'Parent' : 'Member')}</div>
+                            </div>
+                            <div class="contributor-amount" style="color: #e74c3c;">UGX ${(m.stats.balance || 0).toLocaleString()}</div>
+                        </div>
+                    `).join('')}
+                    ${pendingPayers.length === 0 ? '<div style="text-align:center; padding:20px; color:#999;">🎉 All members are settled!</div>' : ''}
+                </div>
+            </div>
+        </div>
+        
+        <!-- Payment Summary by Responsible Person -->
+        <div class="insight-card">
+            <div class="insight-title">
+                <i class="fas fa-chart-pie"></i> Payment Summary by Responsible Person
+            </div>
+            <div class="payment-table-container">
+                <table class="payment-summary-table">
                     <thead>
                         <tr>
                             <th>Payer</th>
@@ -2097,19 +2366,22 @@ async function renderPaymentSummary() {
                         ${Array.from(paymentGroups.values()).map(group => {
                             const payerStats = memberStats.find(s => s.id === group.payer.id)?.stats || { totalOwed: 0, totalPaid: 0, balance: 0 };
                             const dependentNames = group.members.filter(m => m.id !== group.payer.id).map(m => m.name).join(', ');
-                            const balanceClass = payerStats.balance === 0 ? 'balance-zero' : (payerStats.balance > 0 ? 'balance-positive' : 'balance-negative');
-                            const statusText = payerStats.balance === 0 ? '✅ Settled' : (payerStats.balance > 0 ? '⚠️ Pending' : '✅ Overpaid');
+                            const progressPercent = payerStats.totalOwed > 0 ? (payerStats.totalPaid / payerStats.totalOwed * 100) : 100;
+                            const statusClass = payerStats.balance === 0 ? 'status-settled' : (payerStats.balance > 0 ? 'status-pending' : 'status-partial');
+                            const statusText = payerStats.balance === 0 ? '✅ Settled' : (payerStats.balance > 0 ? '⚠️ Pending' : '📈 Overpaid');
                             
                             return `
-                                <tr onclick="showMemberDetails(${group.payer.id})" style="cursor:pointer">
-                                    <td class="member-name-cell">${group.payer.name}</td>
-                                    <td><span class="member-type-badge member-type-${group.payer.member_type}">${group.payer.member_type === 'board' ? 'Board Member' : 'Parent'}</span></td>
-                                    <td>${dependentNames || 'Self only'}</td>
-                                    <td class="balance-positive">UGX ${(payerStats.totalOwed || 0).toLocaleString()}</td>
-                                    <td style="color: var(--success); font-weight: 600;">UGX ${(payerStats.totalPaid || 0).toLocaleString()}</td>
-                                    <td class="${balanceClass}">UGX ${(payerStats.balance || 0).toLocaleString()}</td>
-                                    <td class="${payerStats.balance === 0 ? 'status-settled' : 'status-pending'}">${statusText}</td>
-                                    <td onclick="event.stopPropagation()">${group.payer.phone && payerStats.balance > 0 ? `<button class="contact-icon-btn whatsapp" onclick="sendWhatsApp('${group.payer.phone}', 'Reminder: You have UGX ${(payerStats.balance || 0).toLocaleString()} pending on OBUNANGWE BULAIIRE')"><i class="fab fa-whatsapp"></i> Remind</button>` : '—'}</td>
+                                <tr onclick="showMemberDetails(${group.payer.id})" style="cursor: pointer;">
+                                    <td><strong>${group.payer.name}</strong></td>
+                                    <td><span class="status-badge ${group.payer.member_type === 'board' ? 'status-pending' : 'status-settled'}">${group.payer.member_type === 'board' ? 'Board' : 'Parent'}</span></td>
+                                    <td style="font-size: 12px;">${dependentNames || 'Self only'}</td>
+                                    <td>UGX ${(payerStats.totalOwed || 0).toLocaleString()}</td>
+                                    <td style="color: #27ae60; font-weight: 600;">UGX ${(payerStats.totalPaid || 0).toLocaleString()}</td>
+                                    <td class="${payerStats.balance === 0 ? 'paid-status' : 'unpaid-status'}">UGX ${(payerStats.balance || 0).toLocaleString()}</td>
+                                    <td><span class="status-badge ${statusClass}">${statusText}</span></td>
+                                    <td onclick="event.stopPropagation()">
+                                        ${group.payer.phone && payerStats.balance > 0 ? `<button class="btn-edit" onclick="sendWhatsApp('${group.payer.phone}', 'Reminder: You have UGX ${(payerStats.balance || 0).toLocaleString()} pending')" style="padding: 4px 10px; font-size: 11px;"><i class="fab fa-whatsapp"></i> Remind</button>` : '—'}
+                                    </td>
                                 </tr>
                             `;
                         }).join('')}
@@ -2118,10 +2390,14 @@ async function renderPaymentSummary() {
             </div>
         </div>
         
-        <div class="card">
-            <h2>📋 Detailed Member Payment Status</h2>
-            <div class="members-table-container">
-                <table class="members-table">
+        <!-- Detailed Member Payment Status -->
+        <div class="insight-card">
+            <div class="insight-title">
+                <i class="fas fa-list-ul"></i> Detailed Member Payment Status
+                <span style="font-size: 11px; font-weight: normal; margin-left: auto;">Click any row to view details</span>
+            </div>
+            <div class="payment-table-container">
+                <table class="payment-summary-table">
                     <thead>
                         <tr>
                             <th>Member</th>
@@ -2130,30 +2406,51 @@ async function renderPaymentSummary() {
                             <th>Total Owed (UGX)</th>
                             <th>Total Paid (UGX)</th>
                             <th>Balance (UGX)</th>
+                            <th>Progress</th>
                             <th>Status</th>
                         </tr>
                     </thead>
                     <tbody>
                         ${memberStats.map(m => {
                             const responsible = getPaymentResponsibleMember(m);
-                            const balanceClass = m.stats.balance === 0 ? 'balance-zero' : (m.stats.balance > 0 ? 'balance-positive' : 'balance-negative');
-                            const statusText = m.stats.balance === 0 ? '✅ Settled' : (m.stats.balance > 0 ? '⚠️ Pending' : '✅ Overpaid');
+                            const balance = m.stats.balance || 0;
+                            const progressPercent = m.stats.totalOwed > 0 ? (m.stats.totalPaid / m.stats.totalOwed * 100) : 100;
+                            const statusClass = balance === 0 ? 'status-settled' : (balance > 0 ? 'status-pending' : 'status-partial');
+                            const statusText = balance === 0 ? '✅ Settled' : (balance > 0 ? '⚠️ Pending' : '📈 Overpaid');
                             
                             return `
-                                <tr onclick="showMemberDetails(${m.id})" style="cursor:pointer">
-                                    <td class="member-name-cell">${m.name}</td>
-                                    <td><span class="member-type-badge member-type-${m.member_type}">${m.member_type === 'board' ? 'Board' : (m.member_type === 'parent' ? 'Parent' : (m.member_type === 'child' ? 'Child' : 'Dependent'))}</span></td>
-                                    <td>${responsible && responsible.id !== m.id ? responsible.name : '<span class="payment-responsible">Self</span>'}</td>
-                                    <td class="balance-positive">UGX ${(m.stats.totalOwed || 0).toLocaleString()}</td>
-                                    <td style="color: var(--success); font-weight: 600;">UGX ${(m.stats.totalPaid || 0).toLocaleString()}</td>
-                                    <td class="${balanceClass}">UGX ${(m.stats.balance || 0).toLocaleString()}</td>
-                                    <td class="${m.stats.balance === 0 ? 'status-settled' : 'status-pending'}">${statusText}</td>
+                                <tr onclick="showMemberDetails(${m.id})" style="cursor: pointer;">
+                                    <td><strong>${m.name}</strong></td>
+                                    <td><span class="status-badge ${m.member_type === 'board' ? 'status-pending' : (m.member_type === 'parent' ? 'status-settled' : 'status-partial')}">${m.member_type === 'board' ? 'Board' : (m.member_type === 'parent' ? 'Parent' : (m.member_type === 'dependent' ? 'Dependent' : 'Member'))}</span></td>
+                                    <td>${responsible && responsible.id !== m.id ? responsible.name : '<span style="color:#999;">Self</span>'}</td>
+                                    <td>UGX ${(m.stats.totalOwed || 0).toLocaleString()}</td>
+                                    <td style="color: #27ae60; font-weight: 600;">UGX ${(m.stats.totalPaid || 0).toLocaleString()}</td>
+                                    <td class="${balance === 0 ? 'paid-status' : 'unpaid-status'}">UGX ${Math.abs(balance).toLocaleString()}</td>
+                                    <td>
+                                        <div style="display: flex; align-items: center; gap: 8px;">
+                                            <div class="progress-bar-mini"><div class="progress-fill" style="width: ${progressPercent}%"></div></div>
+                                            <span style="font-size: 11px;">${progressPercent}%</span>
+                                        </div>
+                                    </td>
+                                    <td><span class="status-badge ${statusClass}">${statusText}</span></td>
                                 </tr>
                             `;
                         }).join('')}
                     </tbody>
                 </table>
             </div>
+        </div>
+        
+        <!-- Summary Footer -->
+        <div style="background: linear-gradient(135deg, #01605a, #0a7a72); border-radius: 16px; padding: 15px 20px; margin-top: 20px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;">
+            <div style="color: white;">
+                <i class="fas fa-chart-bar"></i> 
+                <strong>Summary:</strong> 
+                ${totalBalanceAll === 0 ? '🎉 All payments are settled!' : (totalBalanceAll > 0 ? `⚠️ UGX ${totalBalanceAll.toLocaleString()} pending across ${pendingPayers.length} member(s)` : '📈 System is overpaid')}
+            </div>
+            <button class="btn-whatsapp" onclick="generateShareableReport()" style="background: white; color: #01605a;">
+                <i class="fab fa-whatsapp"></i> Share Report
+            </button>
         </div>
     `;
 }
@@ -2248,59 +2545,762 @@ async function renderAdminActivities() {
 // Admin Payments
 async function renderAdminPayments() {
     const payments = await getAllPayments();
+    const members = await getFamilyMembers();
+    const activities = await getActivities();
+    
+    // Calculate summary statistics
+    const totalAmount = payments.reduce((sum, p) => sum + (p.amount || 0), 0);
+    const totalPayments = payments.length;
+    const uniqueMembers = [...new Set(payments.map(p => p.memberName))].length;
+    const uniqueActivities = [...new Set(payments.map(p => p.activityName))].length;
+    
+    // Get recent payments (last 30 days)
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    const recentPayments = payments.filter(p => new Date(p.payment_date) >= thirtyDaysAgo);
+    
+    // Group payments by member
+    const paymentsByMember = {};
+    payments.forEach(p => {
+        if (!paymentsByMember[p.memberName]) {
+            paymentsByMember[p.memberName] = { total: 0, count: 0 };
+        }
+        paymentsByMember[p.memberName].total += p.amount;
+        paymentsByMember[p.memberName].count++;
+    });
+    const topPayer = Object.entries(paymentsByMember).sort((a, b) => b[1].total - a[1].total)[0];
+    
+    // Group payments by activity
+    const paymentsByActivity = {};
+    payments.forEach(p => {
+        if (!paymentsByActivity[p.activityName]) {
+            paymentsByActivity[p.activityName] = { total: 0, count: 0 };
+        }
+        paymentsByActivity[p.activityName].total += p.amount;
+        paymentsByActivity[p.activityName].count++;
+    });
+    const topActivity = Object.entries(paymentsByActivity).sort((a, b) => b[1].total - a[1].total)[0];
+    
     document.getElementById('pageContent').innerHTML = `
-        <div class="card">
-            <h2>All Payments <button class="btn-primary" onclick="openAddModal()"><i class="fas fa-plus"></i> Record Payment</button></h2>
-            <div class="members-table-container">
-                <table class="data-table" style="width: 100%;">
+        <style>
+            .payments-stats-grid {
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+                gap: 16px;
+                margin-bottom: 24px;
+            }
+            .payment-stat-card {
+                background: white;
+                border-radius: 20px;
+                padding: 20px;
+                position: relative;
+                overflow: hidden;
+                box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+                transition: all 0.3s;
+            }
+            .payment-stat-card:hover {
+                transform: translateY(-3px);
+                box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+            }
+            .payment-stat-icon {
+                position: absolute;
+                right: 15px;
+                top: 15px;
+                font-size: 40px;
+                opacity: 0.1;
+            }
+            .payment-stat-value {
+                font-size: 28px;
+                font-weight: 800;
+                margin-bottom: 5px;
+            }
+            .payment-stat-label {
+                font-size: 12px;
+                color: #666;
+                text-transform: uppercase;
+                letter-spacing: 0.5px;
+            }
+            .insight-card {
+                background: white;
+                border-radius: 20px;
+                padding: 20px;
+                margin-bottom: 20px;
+                box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+            }
+            .insight-title {
+                font-size: 16px;
+                font-weight: 600;
+                margin-bottom: 15px;
+                padding-bottom: 10px;
+                border-bottom: 2px solid var(--primary-orange);
+                display: flex;
+                align-items: center;
+                gap: 8px;
+            }
+            .payments-table-container {
+                overflow-x: auto;
+                border-radius: 16px;
+            }
+            .payments-table {
+                width: 100%;
+                border-collapse: collapse;
+                font-size: 13px;
+                min-width: 700px;
+            }
+            .payments-table th {
+                background: linear-gradient(135deg, #01605a, #0a7a72);
+                color: white;
+                padding: 12px 10px;
+                font-weight: 600;
+                text-align: left;
+            }
+            .payments-table td {
+                padding: 10px;
+                border-bottom: 1px solid #f0f0f0;
+            }
+            .payments-table tr:hover {
+                background: #f8f9fa;
+            }
+            .search-filter-bar {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 12px;
+                margin-bottom: 20px;
+                align-items: center;
+            }
+            .search-input-wrapper {
+                flex: 1;
+                min-width: 200px;
+                position: relative;
+            }
+            .search-input-wrapper i {
+                position: absolute;
+                left: 12px;
+                top: 50%;
+                transform: translateY(-50%);
+                color: #999;
+            }
+            .search-input-wrapper input {
+                width: 100%;
+                padding: 10px 12px 10px 35px;
+                border: 1px solid #e0e0e0;
+                border-radius: 30px;
+                font-size: 13px;
+            }
+            .filter-select {
+                padding: 10px 16px;
+                border: 1px solid #e0e0e0;
+                border-radius: 30px;
+                background: white;
+                font-size: 13px;
+            }
+            .amount-highlight {
+                color: #27ae60;
+                font-weight: 700;
+            }
+            .delete-btn {
+                background: #fee2e2;
+                color: #e74c3c;
+                border: none;
+                padding: 5px 10px;
+                border-radius: 8px;
+                cursor: pointer;
+                font-size: 11px;
+                transition: all 0.2s;
+            }
+            .delete-btn:hover {
+                background: #e74c3c;
+                color: white;
+            }
+            @media (max-width: 768px) {
+                .payments-stats-grid {
+                    grid-template-columns: repeat(2, 1fr);
+                    gap: 12px;
+                }
+                .payment-stat-value {
+                    font-size: 22px;
+                }
+                .search-filter-bar {
+                    flex-direction: column;
+                    align-items: stretch;
+                }
+                .filter-select {
+                    width: 100%;
+                }
+            }
+        </style>
+        
+        <!-- Stats Cards -->
+        <div class="payments-stats-grid">
+            <div class="payment-stat-card">
+                <div class="payment-stat-icon"><i class="fas fa-money-bill-wave"></i></div>
+                <div class="payment-stat-value">UGX ${totalAmount.toLocaleString()}</div>
+                <div class="payment-stat-label">Total Collected</div>
+            </div>
+            <div class="payment-stat-card">
+                <div class="payment-stat-icon"><i class="fas fa-receipt"></i></div>
+                <div class="payment-stat-value">${totalPayments}</div>
+                <div class="payment-stat-label">Total Payments</div>
+            </div>
+            <div class="payment-stat-card">
+                <div class="payment-stat-icon"><i class="fas fa-users"></i></div>
+                <div class="payment-stat-value">${uniqueMembers}</div>
+                <div class="payment-stat-label">Members Who Paid</div>
+            </div>
+            <div class="payment-stat-card">
+                <div class="payment-stat-icon"><i class="fas fa-tasks"></i></div>
+                <div class="payment-stat-value">${uniqueActivities}</div>
+                <div class="payment-stat-label">Activities</div>
+            </div>
+        </div>
+        
+        <!-- Quick Insights -->
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px; margin-bottom: 24px;">
+            <div class="insight-card">
+                <div class="insight-title">
+                    <i class="fas fa-trophy" style="color: #ff862d;"></i> Top Contributor
+                </div>
+                ${topPayer ? `
+                    <div style="text-align: center;">
+                        <div style="font-size: 32px; font-weight: 800; color: #ff862d;">${topPayer[0]}</div>
+                        <div style="font-size: 14px; color: #666; margin-top: 5px;">Total Paid</div>
+                        <div style="font-size: 24px; font-weight: 700; color: #27ae60;">UGX ${topPayer[1].total.toLocaleString()}</div>
+                        <div style="font-size: 12px; color: #999; margin-top: 5px;">${topPayer[1].count} payment(s)</div>
+                    </div>
+                ` : '<div style="text-align:center; padding:20px;">No payments yet</div>'}
+            </div>
+            
+            <div class="insight-card">
+                <div class="insight-title">
+                    <i class="fas fa-chart-line"></i> Recent Activity
+                </div>
+                <div style="text-align: center;">
+                    <div style="font-size: 32px; font-weight: 800; color: #3b82f6;">${recentPayments.length}</div>
+                    <div style="font-size: 14px; color: #666;">Payments in last 30 days</div>
+                    <div style="margin-top: 10px; font-size: 12px; color: #999;">
+                        Total: UGX ${recentPayments.reduce((sum, p) => sum + p.amount, 0).toLocaleString()}
+                    </div>
+                </div>
+            </div>
+            
+            <div class="insight-card">
+                <div class="insight-title">
+                    <i class="fas fa-chart-pie"></i> Most Active Activity
+                </div>
+                ${topActivity ? `
+                    <div style="text-align: center;">
+                        <div style="font-size: 18px; font-weight: 600;">${topActivity[0]}</div>
+                        <div style="font-size: 14px; color: #666; margin-top: 5px;">Total Collected</div>
+                        <div style="font-size: 20px; font-weight: 700; color: #27ae60;">UGX ${topActivity[1].total.toLocaleString()}</div>
+                        <div style="font-size: 12px; color: #999; margin-top: 5px;">${topActivity[1].count} payment(s)</div>
+                    </div>
+                ` : '<div style="text-align:center; padding:20px;">No payments yet</div>'}
+            </div>
+        </div>
+        
+        <!-- Search and Filter Bar -->
+        <div class="search-filter-bar">
+            <div class="search-input-wrapper">
+                <i class="fas fa-search"></i>
+                <input type="text" id="paymentSearchInput" placeholder="Search by member, activity, or notes..." onkeyup="filterPayments()">
+            </div>
+            <select id="paymentMemberFilter" class="filter-select" onchange="filterPayments()">
+                <option value="all">All Members</option>
+                ${[...new Set(payments.map(p => p.memberName))].map(m => `<option value="${m}">${m}</option>`).join('')}
+            </select>
+            <select id="paymentActivityFilter" class="filter-select" onchange="filterPayments()">
+                <option value="all">All Activities</option>
+                ${[...new Set(payments.map(p => p.activityName))].map(a => `<option value="${a}">${a}</option>`).join('')}
+            </select>
+            <select id="paymentDateFilter" class="filter-select" onchange="filterPayments()">
+                <option value="all">All Time</option>
+                <option value="today">Today</option>
+                <option value="week">This Week</option>
+                <option value="month">This Month</option>
+                <option value="year">This Year</option>
+            </select>
+            <button class="btn-edit" onclick="resetPaymentFilters()" style="padding: 8px 20px;">
+                <i class="fas fa-undo-alt"></i> Reset
+            </button>
+        </div>
+        
+        <!-- Payments Table -->
+        <div class="insight-card" style="padding: 0; overflow: hidden;">
+            <div class="insight-title" style="padding: 15px 20px; margin: 0;">
+                <i class="fas fa-list"></i> Payment History
+                <button class="btn-primary" onclick="openAddModal()" style="margin-left: auto; padding: 6px 14px; font-size: 12px;">
+                    <i class="fas fa-plus"></i> Record Payment
+                </button>
+            </div>
+            <div class="payments-table-container">
+                <table class="payments-table" id="paymentsTable">
                     <thead>
-                        <tr><th>Date</th><th>Member</th><th>Activity</th><th>Amount (UGX)</th><th>Notes</th><th>Action</th></tr>
+                        <tr>
+                            <th>Date</th>
+                            <th>Member</th>
+                            <th>Activity</th>
+                            <th>Amount (UGX)</th>
+                            <th>Notes</th>
+                            <th>Recorded By</th>
+                            <th>Action</th>
+                        </tr>
                     </thead>
-                    <tbody>
+                    <tbody id="paymentsTableBody">
                         ${payments.map(p => `
-                            <tr>
-                                <td>${new Date(p.payment_date).toLocaleDateString()}</td>
+                            <tr data-member="${p.memberName}" data-activity="${p.activityName}" data-date="${p.payment_date}" data-amount="${p.amount}">
+                                <td style="white-space: nowrap;">${new Date(p.payment_date).toLocaleDateString()}</td>
                                 <td><strong>${p.memberName}</strong></td>
                                 <td>${p.activityName}</td>
-                                <td style="color: var(--success); font-weight: bold;">UGX ${p.amount.toLocaleString()}</td>
-                                <td>${p.notes || '-'}</td>
-                                <td><button class="btn-delete-payment" onclick="deletePayment(${p.id})"><i class="fas fa-trash-alt"></i> Delete</button></td>
+                                <td class="amount-highlight">UGX ${p.amount.toLocaleString()}</td>
+                                <td style="max-width: 150px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${p.notes || '—'}</td>
+                                <td>${p.recorded_by || 'Admin'}</td>
+                                <td><button class="delete-btn" onclick="deletePayment(${p.id})"><i class="fas fa-trash-alt"></i> Delete</button></td>
                             </tr>
-                        `).join('') || '<tr><td colspan="6" style="text-align:center;">No payments recorded</td></tr>'}
+                        `).join('') || '<tr><td colspan="7" style="text-align:center; padding:40px;">No payments recorded yet. Click "Record Payment" to add one.</td></tr>'}
                     </tbody>
                 </table>
             </div>
         </div>
     `;
+    
+    // Add filter function
+    window.filterPayments = function() {
+        const searchTerm = document.getElementById('paymentSearchInput')?.value.toLowerCase() || '';
+        const memberFilter = document.getElementById('paymentMemberFilter')?.value || 'all';
+        const activityFilter = document.getElementById('paymentActivityFilter')?.value || 'all';
+        const dateFilter = document.getElementById('paymentDateFilter')?.value || 'all';
+        
+        const rows = document.querySelectorAll('#paymentsTableBody tr');
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        
+        rows.forEach(row => {
+            let show = true;
+            const member = row.dataset.member || '';
+            const activity = row.dataset.activity || '';
+            const paymentDate = row.dataset.date ? new Date(row.dataset.date) : null;
+            
+            // Search filter
+            if (searchTerm && !row.innerText.toLowerCase().includes(searchTerm)) {
+                show = false;
+            }
+            
+            // Member filter
+            if (memberFilter !== 'all' && member !== memberFilter) {
+                show = false;
+            }
+            
+            // Activity filter
+            if (activityFilter !== 'all' && activity !== activityFilter) {
+                show = false;
+            }
+            
+            // Date filter
+            if (paymentDate && dateFilter !== 'all') {
+                if (dateFilter === 'today') {
+                    if (paymentDate.toDateString() !== today.toDateString()) show = false;
+                } else if (dateFilter === 'week') {
+                    const weekAgo = new Date(today);
+                    weekAgo.setDate(today.getDate() - 7);
+                    if (paymentDate < weekAgo) show = false;
+                } else if (dateFilter === 'month') {
+                    const monthAgo = new Date(today);
+                    monthAgo.setMonth(today.getMonth() - 1);
+                    if (paymentDate < monthAgo) show = false;
+                } else if (dateFilter === 'year') {
+                    const yearAgo = new Date(today);
+                    yearAgo.setFullYear(today.getFullYear() - 1);
+                    if (paymentDate < yearAgo) show = false;
+                }
+            }
+            
+            row.style.display = show ? '' : 'none';
+        });
+    };
+    
+    window.resetPaymentFilters = function() {
+        const searchInput = document.getElementById('paymentSearchInput');
+        const memberSelect = document.getElementById('paymentMemberFilter');
+        const activitySelect = document.getElementById('paymentActivityFilter');
+        const dateSelect = document.getElementById('paymentDateFilter');
+        
+        if (searchInput) searchInput.value = '';
+        if (memberSelect) memberSelect.value = 'all';
+        if (activitySelect) activitySelect.value = 'all';
+        if (dateSelect) dateSelect.value = 'all';
+        
+        filterPayments();
+    };
 }
-
 // User Payments
 async function renderUserPayments() {
     const payments = await getMemberPayments(_currentUser.id);
+    const userStats = await getUserStatistics(_currentUser.id);
+    const activities = await getMemberActivities(_currentUser.id);
+    
+    // Calculate payment statistics
+    const totalPaid = payments.reduce((sum, p) => sum + (p.amount || 0), 0);
+    const totalPayments = payments.length;
+    const uniqueActivities = [...new Set(payments.map(p => p.activityName))].length;
+    
+    // Get recent payments (last 30 days)
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    const recentPayments = payments.filter(p => new Date(p.payment_date) >= thirtyDaysAgo);
+    const recentTotal = recentPayments.reduce((sum, p) => sum + p.amount, 0);
+    
+    // Get payments by month
+    const paymentsByMonth = {};
+    payments.forEach(p => {
+        const date = new Date(p.payment_date);
+        const monthKey = `${date.getFullYear()}-${date.getMonth() + 1}`;
+        const monthName = date.toLocaleString('default', { month: 'long', year: 'numeric' });
+        if (!paymentsByMonth[monthKey]) {
+            paymentsByMonth[monthKey] = { name: monthName, total: 0, count: 0 };
+        }
+        paymentsByMonth[monthKey].total += p.amount;
+        paymentsByMonth[monthKey].count++;
+    });
+    const monthlyData = Object.values(paymentsByMonth).reverse().slice(0, 6);
+    
+    // Get largest payment
+    const largestPayment = payments.length > 0 ? payments.reduce((max, p) => p.amount > max.amount ? p : max, payments[0]) : null;
+    
+    // Calculate completion rate
+    const completionRate = userStats.totalOwed > 0 ? (userStats.totalPaid / userStats.totalOwed * 100) : 100;
+    
     document.getElementById('pageContent').innerHTML = `
-        <div class="card">
-            <h2>My Payment History</h2>
-            <div class="members-table-container">
-                <table class="data-table" style="width: 100%;">
-                    <thead>
-                        <tr><th>Date</th><th>Activity</th><th>Amount (UGX)</th><th>Notes</th></tr>
-                    </thead>
-                    <tbody>
-                        ${payments.map(p => `
-                            <tr>
-                                <td>${new Date(p.payment_date).toLocaleDateString()}</td>
-                                <td>${p.activityName}</td>
-                                <td style="color: var(--success); font-weight: bold;">UGX ${p.amount.toLocaleString()}</td>
-                                <td>${p.notes || '-'}</td>
-                            </tr>
-                        `).join('') || '<tr><td colspan="4" style="text-align:center;">No payment history</td></tr>'}
-                    </tbody>
-                </table>
+        <style>
+            .user-payments-header {
+                background: linear-gradient(135deg, #01605a, #0a7a72);
+                border-radius: 20px;
+                padding: 25px;
+                margin-bottom: 24px;
+                color: white;
+                position: relative;
+                overflow: hidden;
+            }
+            .user-payments-header::before {
+                content: '';
+                position: absolute;
+                top: -50%;
+                right: -50%;
+                width: 200%;
+                height: 200%;
+                background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, transparent 70%);
+                pointer-events: none;
+            }
+            .user-payments-stats {
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+                gap: 16px;
+                margin-bottom: 24px;
+            }
+            .user-stat-card {
+                background: white;
+                border-radius: 20px;
+                padding: 18px;
+                text-align: center;
+                position: relative;
+                overflow: hidden;
+                box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+                transition: all 0.3s;
+            }
+            .user-stat-card:hover {
+                transform: translateY(-3px);
+                box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+            }
+            .user-stat-value {
+                font-size: 28px;
+                font-weight: 800;
+                margin-bottom: 5px;
+            }
+            .user-stat-label {
+                font-size: 12px;
+                color: #666;
+                text-transform: uppercase;
+                letter-spacing: 0.5px;
+            }
+            .user-stat-icon {
+                position: absolute;
+                right: 15px;
+                top: 15px;
+                font-size: 35px;
+                opacity: 0.1;
+            }
+            .payment-progress-card {
+                background: white;
+                border-radius: 20px;
+                padding: 20px;
+                margin-bottom: 24px;
+                box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+            }
+            .payment-timeline {
+                position: relative;
+                padding-left: 30px;
+                margin-top: 20px;
+            }
+            .payment-timeline::before {
+                content: '';
+                position: absolute;
+                left: 10px;
+                top: 0;
+                bottom: 0;
+                width: 2px;
+                background: linear-gradient(180deg, #27ae60, #01605a);
+            }
+            .timeline-payment {
+                position: relative;
+                margin-bottom: 20px;
+                padding: 12px;
+                background: #f8f9fa;
+                border-radius: 12px;
+                transition: all 0.3s;
+            }
+            .timeline-payment:hover {
+                background: #f0f0f0;
+                transform: translateX(5px);
+            }
+            .timeline-dot-payment {
+                position: absolute;
+                left: -26px;
+                top: 18px;
+                width: 12px;
+                height: 12px;
+                border-radius: 50%;
+                background: #27ae60;
+                border: 2px solid white;
+                box-shadow: 0 0 0 2px #27ae60;
+            }
+            .payment-amount-large {
+                font-size: 22px;
+                font-weight: 700;
+                color: #27ae60;
+            }
+            .monthly-chart {
+                display: flex;
+                align-items: flex-end;
+                gap: 12px;
+                margin-top: 20px;
+                flex-wrap: wrap;
+                justify-content: center;
+            }
+            .month-bar {
+                flex: 1;
+                min-width: 60px;
+                text-align: center;
+            }
+            .bar {
+                background: linear-gradient(180deg, #27ae60, #01605a);
+                border-radius: 10px 10px 0 0;
+                transition: height 0.5s;
+                min-height: 5px;
+            }
+            .payments-table-user {
+                width: 100%;
+                border-collapse: collapse;
+                font-size: 13px;
+            }
+            .payments-table-user th {
+                background: linear-gradient(135deg, #01605a, #0a7a72);
+                color: white;
+                padding: 12px 10px;
+                font-weight: 600;
+                text-align: left;
+            }
+            .payments-table-user td {
+                padding: 10px;
+                border-bottom: 1px solid #f0f0f0;
+            }
+            .payments-table-user tr:hover {
+                background: #f8f9fa;
+            }
+            .payment-amount {
+                color: #27ae60;
+                font-weight: 700;
+            }
+            .empty-state {
+                text-align: center;
+                padding: 40px;
+                color: #999;
+            }
+            @media (max-width: 768px) {
+                .user-payments-stats {
+                    grid-template-columns: repeat(2, 1fr);
+                    gap: 12px;
+                }
+                .user-stat-value {
+                    font-size: 22px;
+                }
+                .monthly-chart {
+                    gap: 8px;
+                }
+                .month-bar {
+                    min-width: 50px;
+                }
+            }
+        </style>
+        
+        <!-- Header -->
+        <div class="user-payments-header">
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;">
+                <div>
+                    <h2 style="color: white; margin-bottom: 5px; font-size: 24px;">
+                        <i class="fas fa-history"></i> My Payment History
+                    </h2>
+                    <p style="opacity: 0.9; margin: 0;">Track all your contributions and payments</p>
+                </div>
+                <div style="background: rgba(255,255,255,0.2); border-radius: 20px; padding: 8px 16px;">
+                    <i class="fas fa-chart-line"></i> ${completionRate}% Complete
+                </div>
             </div>
         </div>
+        
+        <!-- Stats Cards -->
+        <div class="user-payments-stats">
+            <div class="user-stat-card">
+                <div class="user-stat-icon"><i class="fas fa-money-bill-wave"></i></div>
+                <div class="user-stat-value">UGX ${totalPaid.toLocaleString()}</div>
+                <div class="user-stat-label">Total Paid</div>
+            </div>
+            <div class="user-stat-card">
+                <div class="user-stat-icon"><i class="fas fa-receipt"></i></div>
+                <div class="user-stat-value">${totalPayments}</div>
+                <div class="user-stat-label">Total Payments</div>
+            </div>
+            <div class="user-stat-card">
+                <div class="user-stat-icon"><i class="fas fa-tasks"></i></div>
+                <div class="user-stat-value">${uniqueActivities}</div>
+                <div class="user-stat-label">Activities</div>
+            </div>
+            <div class="user-stat-card">
+                <div class="user-stat-icon"><i class="fas fa-calendar-week"></i></div>
+                <div class="user-stat-value">${recentPayments.length}</div>
+                <div class="user-stat-label">Last 30 Days</div>
+            </div>
+        </div>
+        
+        <!-- Progress and Insights -->
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; margin-bottom: 24px;">
+            <!-- Payment Progress -->
+            <div class="payment-progress-card">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                    <h3 style="font-size: 16px; margin: 0;">
+                        <i class="fas fa-chart-pie" style="color: #ff862d;"></i> Payment Progress
+                    </h3>
+                    <span style="font-size: 20px; font-weight: 700; color: #27ae60;">${completionRate}%</span>
+                </div>
+                <div style="height: 12px; background: #e0e0e0; border-radius: 10px; overflow: hidden;">
+                    <div style="width: ${completionRate}%; height: 100%; background: linear-gradient(90deg, #27ae60, #01605a); border-radius: 10px; transition: width 0.5s;"></div>
+                </div>
+                <div style="display: flex; justify-content: space-between; margin-top: 10px; font-size: 12px; color: #666;">
+                    <span>Owed: UGX ${(userStats.totalOwed || 0).toLocaleString()}</span>
+                    <span>Paid: UGX ${(userStats.totalPaid || 0).toLocaleString()}</span>
+                    <span>Balance: UGX ${(userStats.balance || 0).toLocaleString()}</span>
+                </div>
+            </div>
+            
+            <!-- Largest Payment -->
+            <div class="payment-progress-card">
+                <h3 style="font-size: 16px; margin-bottom: 15px;">
+                    <i class="fas fa-star" style="color: #ff862d;"></i> Largest Contribution
+                </h3>
+                ${largestPayment ? `
+                    <div style="text-align: center;">
+                        <div class="payment-amount-large">UGX ${largestPayment.amount.toLocaleString()}</div>
+                        <div style="font-size: 13px; color: #666; margin-top: 5px;">for <strong>${largestPayment.activityName}</strong></div>
+                        <div style="font-size: 12px; color: #999; margin-top: 5px;">on ${new Date(largestPayment.payment_date).toLocaleDateString()}</div>
+                    </div>
+                ` : '<div style="text-align:center; padding:20px;">No payments yet</div>'}
+            </div>
+        </div>
+        
+        <!-- Monthly Payment Chart -->
+        ${monthlyData.length > 0 ? `
+        <div class="payment-progress-card">
+            <h3 style="font-size: 16px; margin-bottom: 15px;">
+                <i class="fas fa-chart-bar" style="color: #ff862d;"></i> Monthly Payment History
+            </h3>
+            <div class="monthly-chart">
+                ${monthlyData.map(month => {
+                    const maxTotal = Math.max(...monthlyData.map(m => m.total), 1);
+                    const heightPercent = (month.total / maxTotal) * 100;
+                    return `
+                        <div class="month-bar">
+                            <div class="bar" style="height: ${Math.max(heightPercent, 5)}px; min-height: 5px; width: 100%;"></div>
+                            <div style="font-size: 11px; font-weight: 600; margin-top: 8px;">UGX ${(month.total/1000).toFixed(0)}k</div>
+                            <div style="font-size: 10px; color: #999;">${month.name.split(' ')[0].substring(0, 3)}</div>
+                        </div>
+                    `;
+                }).join('')}
+            </div>
+        </div>
+        ` : ''}
+        
+        <!-- Payment History Table -->
+        <div class="payment-progress-card" style="padding: 0; overflow: hidden;">
+            <div style="padding: 15px 20px; border-bottom: 1px solid #f0f0f0;">
+                <h3 style="font-size: 16px; margin: 0;">
+                    <i class="fas fa-list"></i> Payment History
+                </h3>
+            </div>
+            <div style="overflow-x: auto;">
+                ${payments.length > 0 ? `
+                    <table class="payments-table-user">
+                        <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th>Activity</th>
+                                <th>Amount (UGX)</th>
+                                <th>Notes</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${payments.map(p => `
+                                <tr>
+                                    <td style="white-space: nowrap;">${new Date(p.payment_date).toLocaleDateString()}</td>
+                                    <td><strong>${p.activityName}</strong></td>
+                                    <td class="payment-amount">UGX ${p.amount.toLocaleString()}</td>
+                                    <td style="max-width: 200px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${p.notes || '—'}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                ` : `
+                    <div class="empty-state">
+                        <i class="fas fa-receipt" style="font-size: 48px; margin-bottom: 15px; display: block; color: #ccc;"></i>
+                        <p>You haven't made any payments yet.</p>
+                        <p style="font-size: 12px; margin-top: 5px;">Payments will appear here once recorded.</p>
+                    </div>
+                `}
+            </div>
+        </div>
+        
+        <!-- Recent Activity Timeline -->
+        ${recentPayments.length > 0 ? `
+        <div class="payment-progress-card">
+            <h3 style="font-size: 16px; margin-bottom: 15px;">
+                <i class="fas fa-clock" style="color: #ff862d;"></i> Recent Activity Timeline
+            </h3>
+            <div class="payment-timeline">
+                ${recentPayments.slice(0, 10).map(p => `
+                    <div class="timeline-payment">
+                        <div class="timeline-dot-payment"></div>
+                        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+                            <div>
+                                <div style="font-weight: 600;">${p.activityName}</div>
+                                <div style="font-size: 11px; color: #999;">${new Date(p.payment_date).toLocaleDateString()}</div>
+                            </div>
+                            <div style="font-weight: 700; color: #27ae60;">+UGX ${p.amount.toLocaleString()}</div>
+                        </div>
+                        ${p.notes ? `<div style="font-size: 11px; color: #666; margin-top: 8px; padding-top: 8px; border-top: 1px solid #e0e0e0;">📝 ${p.notes}</div>` : ''}
+                    </div>
+                `).join('')}
+            </div>
+        </div>
+        ` : ''}
     `;
 }
-
 // Contacts
 async function renderContacts() {
     const members = await getFamilyMembers();
