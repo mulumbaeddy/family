@@ -95,219 +95,102 @@ function processToastQueue() {
 })();
 
 async function loadData() {
-    try {
-        console.log('🔄 Loading data...');
-        
-        const { data: members, error: membersError } = await _supabase
-            .from('family_members')
-            .select('*')
-            .order('name');
-        
-        if (membersError) throw membersError;
-        
-        // IMPORTANT: Map profile_picture_url correctly
-        _familyMembers = members.map(member => ({
-            ...member,
-            profile_picture_url: member.profile_picture_url || null,
-            phone: member.phone || '',
-            email: member.email || '',
-            location: member.location || '',
-            bio: member.bio || '',
-            occupation: member.occupation || ''
-        }));
-        
-        console.log(`✅ Loaded ${_familyMembers.length} members`);
-        
-        // Debug: Log profile pictures
-        _familyMembers.forEach(m => {
-            if (m.profile_picture_url) {
-                console.log(`📸 ${m.name} has picture: ${m.profile_picture_url.substring(0, 50)}...`);
-            } else {
-                console.log(`❌ ${m.name} has NO picture`);
-            }
-        });
-        
-        // Load activities and other data...
-        const { data: activities, error: activitiesError } = await _supabase
-            .from('activities')
-            .select('*')
-            .order('created_at', { ascending: false });
-        
-        if (activitiesError) throw activitiesError;
-        
-        _activities = activities || [];
-        
-        // Populate user dropdown
-        const userSelect = document.getElementById('userSelect');
-        if (userSelect && _familyMembers.length > 0) {
-            userSelect.innerHTML = `
-                <option value="">📋 Select your name...</option>
-                ${_familyMembers.map(m => `
-                    <option value="${m.id}">
-                        ${m.member_type === 'board' ? '👑 ' : ''}${m.name}
-                    </option>
-                `).join('')}
-            `;
+    const { data: members } = await _supabase.from('family_members').select('*');
+    if (members) _familyMembers = members;
+    
+    const { data: acts } = await _supabase.from('activities').select('*');
+    if (acts) {
+        _activities = [];
+        for (const act of acts) {
+            const { data: memberActs } = await _supabase
+                .from('member_activities')
+                .select('*, family_members(*)')
+                .eq('activity_id', act.id);
+            _activities.push({
+                id: act.id,
+                name: act.name,
+                description: act.description,
+                totalBudget: act.total_budget,
+                expectedCompletionDate: act.expected_completion_date,
+                status: act.status,
+                memberPayments: memberActs || []
+            });
         }
-        
-        return true;
-        
-    } catch (error) {
-        console.error('❌ Error loading data:', error);
-        return false;
+    }
+    
+    const select = document.getElementById('userSelect');
+    if (select && _familyMembers.length) {
+        select.innerHTML = '<option value="">Select your name...</option>' + 
+            _familyMembers.map(m => `<option value="${m.id}">${m.name} (${m.member_type === 'board' ? 'Board Member' : (m.member_type === 'parent' ? 'Parent' : 'Child')})</option>`).join('');
     }
 }
+
 // ============================================
 // IMAGE PREVIEW FUNCTIONS
 // ============================================
-// REPLACE your old previewAddImage with this:
-// ============================================
-// COMPLETE WORKING PICTURE FUNCTIONS
-// ============================================
-
-// Preview and compress image for Add Member
-// Updated preview functions (same as before)
-async function previewAddImage(input) {
+function previewAddImage(input) {
+    console.log('📷 previewAddImage called');
+    console.log('Input files:', input.files);
+    
     if (input.files && input.files[0]) {
         const file = input.files[0];
+        console.log('File selected:', file.name, file.type, file.size);
         
-        // Show preview
+        const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+        if (!allowedTypes.includes(file.type)) {
+            Swal.fire('Error', 'Please upload a valid image', 'error');
+            input.value = '';
+            return;
+        }
+        
+        if (file.size > 5 * 1024 * 1024) {
+            Swal.fire('Error', 'Image size must be less than 5MB', 'error');
+            input.value = '';
+            return;
+        }
+        
         const reader = new FileReader();
         reader.onload = function(e) {
             const preview = document.getElementById('addImagePreview');
-            preview.innerHTML = `<img src="${e.target.result}" alt="Preview" style="width: 100%; height: 100%; object-fit: cover; border-radius: 50%;">`;
+            if (preview) {
+                preview.innerHTML = `<img src="${e.target.result}" alt="Preview" style="width: 100%; height: 100%; object-fit: cover; border-radius: 50%;">`;
+            }
+            // Store the file globally
+            window._currentImageFile = file;
+            console.log('✅ Image preview ready, file stored:', file.name);
         };
         reader.readAsDataURL(file);
-        
-        // Store the file
-        window._addImageFile = file;
+    } else {
+        console.log('No file selected');
+        window._currentImageFile = null;
     }
 }
-
-async function previewEditImage(input) {
+function previewEditImage(input) {
     if (input.files && input.files[0]) {
         const file = input.files[0];
         
-        // Show preview
+        const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+        if (!allowedTypes.includes(file.type)) {
+            Swal.fire('Error', 'Please upload a valid image (JPEG, PNG, GIF, or WEBP)', 'error');
+            input.value = '';
+            return;
+        }
+        
+        if (file.size > 5 * 1024 * 1024) {
+            Swal.fire('Error', 'Image size must be less than 5MB', 'error');
+            input.value = '';
+            return;
+        }
+        
         const reader = new FileReader();
         reader.onload = function(e) {
             const preview = document.getElementById('editImagePreview');
             preview.innerHTML = `<img src="${e.target.result}" alt="Preview" style="width: 100%; height: 100%; object-fit: cover; border-radius: 50%;">`;
+            window._editImageFile = file;
         };
         reader.readAsDataURL(file);
-        
-        // Store the file
-        window._editImageFile = file;
     }
 }
-// Compress image function
-async function compressImage(file, maxWidth = 200, maxHeight = 200, quality = 0.6) {
-    return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.readAsDataURL(file);
-        reader.onload = (e) => {
-            const img = new Image();
-            img.src = e.target.result;
-            img.onload = () => {
-                const canvas = document.createElement('canvas');
-                let width = img.width;
-                let height = img.height;
-                
-                if (width > height) {
-                    if (width > maxWidth) {
-                        height = (height * maxWidth) / width;
-                        width = maxWidth;
-                    }
-                } else {
-                    if (height > maxHeight) {
-                        width = (width * maxHeight) / height;
-                        height = maxHeight;
-                    }
-                }
-                
-                canvas.width = width;
-                canvas.height = height;
-                const ctx = canvas.getContext('2d');
-                ctx.drawImage(img, 0, 0, width, height);
-                
-                canvas.toBlob((blob) => {
-                    resolve(blob);
-                }, 'image/jpeg', quality);
-            };
-        };
-        reader.onerror = error => reject(error);
-    });
-}
-
-// Upload image to Supabase Storage
-// ============================================
-// UPDATED STORAGE FUNCTIONS WITH NEW BUCKET
-// ============================================
-
-// Upload image to new bucket
-async function uploadProfilePicture(file, memberId) {
-    try {
-        const fileExt = file.name.split('.').pop();
-        const fileName = `member_${memberId}_${Date.now()}.${fileExt}`;
-        
-        console.log('Uploading to family-photos bucket...');
-        
-        const { data, error } = await _supabase.storage
-            .from('family-photos')  // NEW BUCKET NAME
-            .upload(fileName, file, {
-                cacheControl: '3600',
-                upsert: true,
-                contentType: file.type
-            });
-        
-        if (error) {
-            console.error('Upload error:', error);
-            return null;
-        }
-        
-        // Get public URL
-        const { data: { publicUrl } } = _supabase.storage
-            .from('family-photos')  // NEW BUCKET NAME
-            .getPublicUrl(fileName);
-        
-        console.log('Upload successful! URL:', publicUrl);
-        
-        // Save URL to database
-        const { error: updateError } = await _supabase
-            .from('family_members')
-            .update({ profile_picture_url: publicUrl })
-            .eq('id', memberId);
-        
-        if (updateError) {
-            console.error('Failed to save URL:', updateError);
-            return null;
-        }
-        
-        return publicUrl;
-        
-    } catch (error) {
-        console.error('Upload error:', error);
-        return null;
-    }
-}
-
-// Delete old profile picture from new bucket
-async function deleteOldProfilePicture(oldUrl) {
-    if (!oldUrl) return;
-    
-    try {
-        const fileName = oldUrl.split('/').pop();
-        if (fileName && fileName.includes('member_')) {
-            await _supabase.storage
-                .from('family-photos')  // NEW BUCKET NAME
-                .remove([fileName]);
-            console.log('Old picture deleted:', fileName);
-        }
-    } catch (error) {
-        console.error('Delete error:', error);
-    }
-}
-
 // ============================================
 // DATA ACCESS FUNCTIONS
 // ============================================
@@ -335,49 +218,36 @@ async function getMemberActivities(memberId) {
 }
 
 async function getMemberPayments(memberId) {
-    const { data: payments, error } = await _supabase
-        .from('payments')
-        .select(`
-            *,
-            activities(name)
-        `)
-        .eq('member_id', memberId)
-        .order('payment_date', { ascending: false });
-    
-    if (error) {
-        console.error('Error fetching member payments:', error);
-        return [];
+    let payments = [];
+    for (const a of _activities) {
+        const { data: payData } = await _supabase
+            .from('payments')
+            .select('*')
+            .eq('activity_id', a.id)
+            .eq('member_id', memberId);
+        if (payData) {
+            payData.forEach(p => { payments.push({ ...p, activityName: a.name }); });
+        }
     }
-    
-    return payments.map(p => ({
-        ...p,
-        activityName: p.activities?.name || 'Unknown'
-    }));
+    return payments.sort((a, b) => new Date(b.payment_date) - new Date(a.payment_date));
 }
 
 async function getAllPayments() {
-    // Fetch payments with a single query instead of looping through activities
-    const { data: payments, error } = await _supabase
-        .from('payments')
-        .select(`
-            *,
-            family_members(name),
-            activities(name)
-        `)
-        .order('payment_date', { ascending: false });
-    
-    if (error) {
-        console.error('Error fetching payments:', error);
-        return [];
+    let payments = [];
+    for (const a of _activities) {
+        const { data: payData } = await _supabase
+            .from('payments')
+            .select('*, family_members(name)')
+            .eq('activity_id', a.id);
+        if (payData) {
+            payData.forEach(p => {
+                payments.push({ ...p, activityName: a.name, memberName: p.family_members?.name || 'Unknown' });
+            });
+        }
     }
-    
-    // Format the payments
-    return payments.map(p => ({
-        ...p,
-        memberName: p.family_members?.name || 'Unknown',
-        activityName: p.activities?.name || 'Unknown'
-    }));
+    return payments.sort((a, b) => new Date(b.payment_date) - new Date(a.payment_date));
 }
+
 async function getStatistics() {
     const activeActivities = _activities.filter(a => a.status === 'active').length;
     const completedActivities = _activities.filter(a => a.status === 'completed').length;
@@ -787,23 +657,32 @@ async function deleteActivity(id) {
     }
 }
 
-async function addMember(name, role, phone, email, profilePictureFile, dob, bloodGroup, allergies, 
+async function addMember(name, role, phone, email, profileImageFile, dob, bloodGroup, allergies, 
     emergencyContact, occupation, location, maritalStatus, anniversary, bio, favoriteColor,
     memberType, boardPosition, parentId) {
+    
+    console.log('➕ Adding member:', name);
+    console.log('📷 Has image file?', profileImageFile ? `Yes - ${profileImageFile.name}` : 'No');
     
     if (_currentRole !== 'admin') { 
         Swal.fire('Access Denied', 'Only administrators can add members', 'error'); 
         return false; 
     }
     
-    // Insert member first without picture
+    // Determine payment responsible
+    let paymentResponsibleId = null;
+    if (memberType === 'child' || memberType === 'dependent') {
+        paymentResponsibleId = parentId;
+    }
+    
+    // First insert member WITHOUT profile picture
     const { data: member, error } = await _supabase
         .from('family_members')
         .insert({ 
             name, 
             role: (memberType === 'board' || memberType === 'parent') ? 'parent' : 'child',
-            phone: phone || null,
-            email: email || null,
+            phone, 
+            email,
             date_of_birth: dob || null,
             blood_group: bloodGroup || null,
             allergies: allergies || null,
@@ -816,28 +695,63 @@ async function addMember(name, role, phone, email, profilePictureFile, dob, bloo
             favorite_color: favoriteColor || '#01605a',
             member_type: memberType,
             parent_id: parentId || null,
-            payment_responsible_id: (memberType === 'child' || memberType === 'dependent') ? parentId : null,
+            payment_responsible_id: paymentResponsibleId,
             is_board_member: memberType === 'board',
             board_position: boardPosition || null,
             can_approve_payments: memberType === 'board'
         })
-        .select()
-        .single();
+        .select();
     
     if (error) { 
+        console.error('❌ Insert error:', error);
         Swal.fire('Error', error.message, 'error'); 
         return false; 
     }
     
+    const memberId = member[0].id;
+    console.log('✅ Member created with ID:', memberId);
+    
     // Upload profile picture if provided
-    if (profilePictureFile) {
-        const pictureUrl = await uploadProfilePicture(profilePictureFile, member.id);
-        if (pictureUrl) {
-            await _supabase
+    let profilePictureUrl = null;
+    if (profileImageFile) {
+        console.log('📤 Uploading file:', profileImageFile.name);
+        
+        const fileExt = profileImageFile.name.split('.').pop();
+        const fileName = `${memberId}-${Date.now()}.${fileExt}`;
+        
+        const { data: uploadData, error: uploadError } = await _supabase.storage
+            .from('profile-pictures')
+            .upload(fileName, profileImageFile, {
+                cacheControl: '3600',
+                upsert: true
+            });
+        
+        if (uploadError) {
+            console.error('❌ Upload error:', uploadError);
+            Swal.fire('Warning', 'Member added but profile picture upload failed: ' + uploadError.message, 'warning');
+        } else {
+            console.log('✅ Upload successful:', uploadData);
+            profilePictureUrl = `${SUPABASE_URL}/storage/v1/object/public/profile-pictures/${fileName}`;
+            console.log('🔗 Profile picture URL:', profilePictureUrl);
+            
+            // Update member with profile picture URL
+            const { error: updateError } = await _supabase
                 .from('family_members')
-                .update({ profile_picture_url: pictureUrl })
-                .eq('id', member.id);
+                .update({ profile_picture: profilePictureUrl })
+                .eq('id', memberId);
+            
+            if (updateError) {
+                console.error('❌ Update error:', updateError);
+            } else {
+                console.log('✅ Member updated with profile picture!');
+            }
         }
+    }
+    
+    // Recalculate all active activity shares
+    const activeActivities = _activities.filter(a => a.status === 'active');
+    for (const activity of activeActivities) {
+        await recalculateActivityShares(activity.id, activity.totalBudget);
     }
     
     await loadData();
@@ -845,70 +759,128 @@ async function addMember(name, role, phone, email, profilePictureFile, dob, bloo
     return true;
 }
 
-// Updated Update Member
-async function updateMember(id, name, role, phone, email, profilePictureFile, dob, bloodGroup, allergies, 
+
+async function updateMember(id, name, role, phone, email, profileImageFile, dob, bloodGroup, allergies, 
     emergencyContact, occupation, location, maritalStatus, anniversary, bio, favoriteColor,
     memberType, boardPosition, parentId) {
+    
+    console.log('✏️ Updating member:', name);
+    console.log('📷 Has new image?', profileImageFile ? `Yes - ${profileImageFile.name}` : 'No');
     
     if (_currentRole !== 'admin') { 
         Swal.fire('Access Denied', 'Only administrators can edit members', 'error'); 
         return false; 
     }
     
-    // Get current member
-    const { data: currentMember } = await _supabase
+    // Get current member to check for old profile picture
+    const currentMember = _familyMembers.find(m => m.id === id);
+    
+    // Determine payment responsible
+    let paymentResponsibleId = null;
+    if (memberType === 'child' || memberType === 'dependent') {
+        paymentResponsibleId = parentId;
+    }
+    
+    // First, update member WITHOUT profile picture (to be updated after upload)
+    const { data: member, error } = await _supabase
         .from('family_members')
-        .select('profile_picture_url')
+        .update({ 
+            name, 
+            role: (memberType === 'board' || memberType === 'parent') ? 'parent' : 'child',
+            phone, 
+            email,
+            date_of_birth: dob || null,
+            blood_group: bloodGroup || null,
+            allergies: allergies || null,
+            emergency_contact: emergencyContact || null,
+            occupation: occupation || null,
+            location: location || null,
+            marital_status: maritalStatus || null,
+            anniversary_date: anniversary || null,
+            bio: bio || null,
+            favorite_color: favoriteColor || '#01605a',
+            member_type: memberType,
+            parent_id: parentId || null,
+            payment_responsible_id: paymentResponsibleId,
+            is_board_member: memberType === 'board',
+            board_position: boardPosition || null,
+            can_approve_payments: memberType === 'board'
+            // profile_picture will be updated separately
+        })
         .eq('id', id)
-        .single();
-    
-    let pictureUrl = currentMember?.profile_picture_url;
-    
-    // Upload new picture if provided
-    if (profilePictureFile) {
-        if (pictureUrl) {
-            await deleteOldProfilePicture(pictureUrl);
-        }
-        pictureUrl = await uploadProfilePicture(profilePictureFile, id);
-    }
-    
-    const updateData = { 
-        name, 
-        role: (memberType === 'board' || memberType === 'parent') ? 'parent' : 'child',
-        phone: phone || null,
-        email: email || null,
-        date_of_birth: dob || null,
-        blood_group: bloodGroup || null,
-        allergies: allergies || null,
-        emergency_contact: emergencyContact || null,
-        occupation: occupation || null,
-        location: location || null,
-        marital_status: maritalStatus || null,
-        anniversary_date: anniversary || null,
-        bio: bio || null,
-        favorite_color: favoriteColor || '#01605a',
-        member_type: memberType,
-        parent_id: parentId || null,
-        payment_responsible_id: (memberType === 'child' || memberType === 'dependent') ? parentId : null,
-        is_board_member: memberType === 'board',
-        board_position: boardPosition || null,
-        can_approve_payments: memberType === 'board'
-    };
-    
-    if (pictureUrl) {
-        updateData.profile_picture_url = pictureUrl;
-    }
-    
-    const { error } = await _supabase
-        .from('family_members')
-        .update(updateData)
-        .eq('id', id);
+        .select();
     
     if (error) { 
-        throw new Error(error.message);
+        console.error('❌ Update error:', error);
+        Swal.fire('Error', error.message, 'error'); 
+        return false; 
+    }
+    
+    const memberId = member[0].id;
+    console.log('✅ Member info updated for ID:', memberId);
+    
+    // Upload new profile picture if provided
+    let profilePictureUrl = currentMember?.profile_picture || null;
+    if (profileImageFile) {
+        console.log('📤 Uploading new profile picture...');
+        
+        // Delete old profile picture from storage if it exists
+        if (currentMember?.profile_picture && currentMember.profile_picture.includes('storage')) {
+            const oldFileName = currentMember.profile_picture.split('/').pop();
+            console.log('🗑️ Deleting old file:', oldFileName);
+            
+            const { error: deleteError } = await _supabase.storage
+                .from('profile-pictures')
+                .remove([oldFileName]);
+            
+            if (deleteError) {
+                console.log('Could not delete old image:', deleteError.message);
+            } else {
+                console.log('✅ Old image deleted');
+            }
+        }
+        
+        // Upload new image
+        const fileExt = profileImageFile.name.split('.').pop();
+        const fileName = `${memberId}-${Date.now()}.${fileExt}`;
+        
+        const { data: uploadData, error: uploadError } = await _supabase.storage
+            .from('profile-pictures')
+            .upload(fileName, profileImageFile, {
+                cacheControl: '3600',
+                upsert: true
+            });
+        
+        if (uploadError) {
+            console.error('❌ Upload error:', uploadError);
+            Swal.fire('Warning', 'Profile picture upload failed, but other info was updated.', 'warning');
+        } else {
+            console.log('✅ Upload successful:', uploadData);
+            profilePictureUrl = `${SUPABASE_URL}/storage/v1/object/public/profile-pictures/${fileName}`;
+            console.log('🔗 Profile picture URL:', profilePictureUrl);
+            
+            // Update member with profile picture URL
+            const { error: updateError } = await _supabase
+                .from('family_members')
+                .update({ profile_picture: profilePictureUrl })
+                .eq('id', memberId);
+            
+            if (updateError) {
+                console.error('❌ Update error:', updateError);
+            } else {
+                console.log('✅ Member updated with profile picture!');
+            }
+        }
+    }
+    
+    // Recalculate all active activity shares
+    const activeActivities = _activities.filter(a => a.status === 'active');
+    for (const activity of activeActivities) {
+        await recalculateActivityShares(activity.id, activity.totalBudget);
     }
     
     await loadData();
+    Swal.fire('Success!', `${name} updated successfully.`, 'success');
     return true;
 }
 async function deleteMember(id) {
@@ -930,6 +902,81 @@ async function deleteMember(id) {
         await renderCurrentPage();
         Swal.fire('Removed!', 'Member has been removed.', 'success');
     }
+}
+
+// ============================================
+// NEW FUNCTIONS TO ADD - STORAGE UPLOAD
+// ============================================
+
+async function uploadProfilePicture(file, memberId) {
+    if (!file) {
+        console.log('❌ No file provided');
+        return null;
+    }
+    
+    console.log('📤 Starting upload:', file.name, file.type, file.size);
+    
+    // Validate file type
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+    if (!allowedTypes.includes(file.type)) {
+        Swal.fire('Error', 'Please upload a valid image (JPEG, PNG, GIF, or WEBP)', 'error');
+        return null;
+    }
+    
+    // Validate file size (max 5MB)
+    if (file.size > 5 * 1024 * 1024) {
+        Swal.fire('Error', 'Image size must be less than 5MB', 'error');
+        return null;
+    }
+    
+    const fileExt = file.name.split('.').pop();
+    const fileName = `${memberId}-${Date.now()}.${fileExt}`;
+    const filePath = fileName;
+    
+    console.log('📁 Upload path:', filePath);
+    
+    try {
+        // Upload to Supabase Storage
+        const { data, error } = await _supabase.storage
+            .from('profile-pictures')
+            .upload(filePath, file, {
+                cacheControl: '3600',
+                upsert: true,
+                contentType: file.type
+            });
+        
+        if (error) {
+            console.error('❌ Storage upload error:', error);
+            Swal.fire('Upload Error', error.message, 'error');
+            return null;
+        }
+        
+        console.log('✅ Upload successful:', data);
+        
+        // Get public URL
+        const { data: publicUrlData } = _supabase.storage
+            .from('profile-pictures')
+            .getPublicUrl(filePath);
+        
+        console.log('🔗 Public URL:', publicUrlData.publicUrl);
+        return publicUrlData.publicUrl;
+        
+    } catch (err) {
+        console.error('❌ Upload exception:', err);
+        Swal.fire('Error', 'Failed to upload image: ' + err.message, 'error');
+        return null;
+    }
+}
+
+async function deleteOldProfilePicture(memberId, oldImageUrl) {
+    if (!oldImageUrl) return;
+    
+    const fileName = oldImageUrl.split('/').pop();
+    if (!fileName || !fileName.includes(memberId.toString())) return;
+    
+    await _supabase.storage
+        .from('profile-pictures')
+        .remove([fileName]);
 }
 
 // ============================================
@@ -1412,16 +1459,13 @@ async function showMemberDetails(memberId) {
     const responsible = getPaymentResponsibleMember(member);
     const stats = await getUserStatistics(member.id);
     
-    // Use profile_picture_url (not profile_picture)
-    const pictureUrl = member.profile_picture_url;
-    
     const html = `
         <div class="member-profile-card">
             <div class="member-profile-header">
                 <div class="member-profile-picture">
-                    ${pictureUrl ? 
-                        `<img src="${pictureUrl}" alt="${member.name}" style="width: 100%; height: 100%; object-fit: cover; border-radius: 50%;">` : 
-                        `<i class="fas fa-user-circle" style="font-size: 50px; color: white;"></i>`
+                    ${member.profile_picture ? 
+                        `<img src="${member.profile_picture}" alt="${member.name}">` : 
+                        `<i class="fas fa-user-circle"></i>`
                     }
                 </div>
                 <div class="member-profile-name">${member.name}</div>
@@ -1564,7 +1608,6 @@ async function renderAdminMembers() {
     `;
 }
 
-// Update renderMemberTable function to show board position
 function renderMemberTable(members, memberStats, title) {
     if (members.length === 0) {
         return `<div style="text-align:center; padding: 30px; color: #999; background: var(--gray-100); border-radius: 12px;">
@@ -1600,35 +1643,23 @@ function renderMemberTable(members, memberStats, title) {
                             return otherResponsible && otherResponsible.id === m.id && other.id !== m.id;
                         });
                         
-                        // Format position/role with board position if applicable
-                        let positionHtml = '';
-                        if (m.member_type === 'board') {
-                            positionHtml = `
-                                <span class="member-type-badge member-type-board">
-                                    <i class="fas fa-crown board-crown"></i> Board Member
-                                </span>
-                                ${m.board_position ? `<div class="board-position-cell"><i class="fas fa-briefcase"></i> ${m.board_position.charAt(0).toUpperCase() + m.board_position.slice(1)}</div>` : ''}
-                            `;
-                        } else {
-                            positionHtml = `
-                                <span class="member-type-badge member-type-${m.member_type}">
-                                    ${m.member_type === 'parent' ? '👨‍👩 Parent' : (m.member_type === 'child' ? '🧒 Child' : '👶 Dependent')}
-                                </span>
-                            `;
-                        }
-                        
                         return `
                             <tr onclick="showMemberDetails(${m.id})">
-                                <td>${m.profile_picture ? `<img src="${m.profile_picture}" class="member-avatar-table">` : `<div class="member-avatar-placeholder"><i class="fas ${m.member_type === 'board' ? 'fa-crown' : (m.member_type === 'parent' ? 'fa-user-tie' : 'fa-user-child')}"></i></div>`}${m.member_type === 'board' ? '<div style="font-size: 10px; text-align: center; margin-top: 4px;">👑 Board</div>' : ''}</td>
-                                <td class="member-name-cell">${m.name} ${isPayingForOthers ? '<span class="approval-badge">Pays for others</span>' : ''}${m.member_type === 'board' ? '<span class="board-position-badge">Board</span>' : ''}</div></td>
-                                <td>${positionHtml}</div>${responsible && responsible.id !== m.id ? `<div class="payment-responsible"><i class="fas fa-user-check"></i> Pays: ${responsible.name}</div>` : ''}</div></td>
-                                <td><div class="contact-icons" onclick="event.stopPropagation()">${m.phone ? `<button class="contact-icon-btn whatsapp" onclick="sendWhatsApp('${m.phone}', 'Hello ${m.name} from OBUNANGWE BULAIIRE!')" title="WhatsApp"><i class="fab fa-whatsapp"></i></button><button class="contact-icon-btn call" onclick="makeCall('${m.phone}')" title="Call"><i class="fas fa-phone"></i></button>` : '<span class="member-tooltip">—</span>'}</div></div></td>
-                                <td>${m.blood_group ? `<span class="medical-badge-table"><i class="fas fa-tint"></i> ${m.blood_group}</span>` : ''}${m.allergies ? `<span class="medical-badge-table"><i class="fas fa-allergies"></i> Allergy</span>` : ''}${!m.blood_group && !m.allergies ? '—' : ''}</div></td>
-                                <td>${m.location ? `<i class="fas fa-map-marker-alt"></i> ${m.location}` : '—'}</div></td>
-                                <td class="balance-positive">UGX ${(stats.totalOwed || 0).toLocaleString()}</div></td>
-                                <td style="color: var(--success); font-weight: 600;">UGX ${(stats.totalPaid || 0).toLocaleString()}</div></td>
-                                <td class="${balanceClass}">UGX ${(stats.balance || 0).toLocaleString()}</div></td>
-                                <td><div class="action-buttons" onclick="event.stopPropagation()"><button class="contact-icon-btn edit" onclick="openEditMember(${m.id})" title="Edit"><i class="fas fa-edit"></i></button><button class="contact-icon-btn delete" onclick="deleteMember(${m.id})" title="Delete"><i class="fas fa-trash"></i></button></div></div></td>
+                                <td>${m.profile_picture ? `<img src="${m.profile_picture}" class="member-avatar-table">` : `<div class="member-avatar-placeholder"><i class="fas ${m.member_type === 'board' ? 'fa-crown' : (m.member_type === 'parent' ? 'fa-user-tie' : 'fa-user-child')}"></i></div>`}</td>
+                                <td class="member-name-cell">${m.name} ${isPayingForOthers ? '<span class="approval-badge">Pays for others</span>' : ''}</td>
+                                <td>
+                                    <span class="member-type-badge member-type-${m.member_type}">
+                                        ${m.member_type === 'board' ? '🏛️ ' + (m.board_position || 'Board Member') : (m.member_type === 'parent' ? '👨‍👩 Parent' : (m.member_type === 'child' ? '🧒 Child' : '👶 Dependent'))}
+                                    </span>
+                                    ${responsible && responsible.id !== m.id ? `<div class="payment-responsible"><i class="fas fa-user-check"></i> Pays: ${responsible.name}</div>` : ''}
+                                </td>
+                                <td><div class="contact-icons" onclick="event.stopPropagation()">${m.phone ? `<button class="contact-icon-btn whatsapp" onclick="sendWhatsApp('${m.phone}', 'Hello ${m.name} from OBUNANGWE BULAIIRE!')" title="WhatsApp"><i class="fab fa-whatsapp"></i></button><button class="contact-icon-btn call" onclick="makeCall('${m.phone}')" title="Call"><i class="fas fa-phone"></i></button>` : '<span class="member-tooltip">—</span>'}</div></td>
+                                <td>${m.blood_group ? `<span class="medical-badge-table"><i class="fas fa-tint"></i> ${m.blood_group}</span>` : ''}${m.allergies ? `<span class="medical-badge-table"><i class="fas fa-allergies"></i> Allergy</span>` : ''}${!m.blood_group && !m.allergies ? '—' : ''}</td>
+                                <td>${m.location ? `<i class="fas fa-map-marker-alt"></i> ${m.location}` : '—'}</td>
+                                <td class="balance-positive">UGX ${(stats.totalOwed || 0).toLocaleString()}</td>
+                                <td style="color: var(--success); font-weight: 600;">UGX ${(stats.totalPaid || 0).toLocaleString()}</td>
+                                <td class="${balanceClass}">UGX ${(stats.balance || 0).toLocaleString()}</td>
+                                <td><div class="action-buttons" onclick="event.stopPropagation()"><button class="contact-icon-btn edit" onclick="openEditMember(${m.id})" title="Edit"><i class="fas fa-edit"></i></button><button class="contact-icon-btn delete" onclick="deleteMember(${m.id})" title="Delete"><i class="fas fa-trash"></i></button></div></td>
                             </tr>
                         `;
                     }).join('')}
@@ -1848,202 +1879,56 @@ async function renderAdminActivities() {
 
 // Admin Payments
 async function renderAdminPayments() {
-    // Show loading state immediately
-    document.getElementById('pageContent').innerHTML = `
-        <div class="card">
-            <h2>All Payments <button class="btn-primary" onclick="openAddModal()"><i class="fas fa-plus"></i> Record Payment</button></h2>
-            <div style="text-align: center; padding: 40px;">
-                <i class="fas fa-spinner fa-pulse fa-2x"></i>
-                <p>Loading payments...</p>
-            </div>
-        </div>
-    `;
-    
-    // Fetch payments
     const payments = await getAllPayments();
-    
-    if (payments.length === 0) {
-        document.getElementById('pageContent').innerHTML = `
-            <div class="card">
-                <h2>All Payments <button class="btn-primary" onclick="openAddModal()"><i class="fas fa-plus"></i> Record Payment</button></h2>
-                <div style="text-align: center; padding: 40px;">
-                    <i class="fas fa-receipt" style="font-size: 48px; color: #ccc; margin-bottom: 16px; display: block;"></i>
-                    <p>No payments recorded yet.</p>
-                    <button class="btn-primary" onclick="openAddModal()" style="margin-top: 16px;">Record First Payment</button>
-                </div>
-            </div>
-        `;
-        return;
-    }
-    
-    // Display payments
     document.getElementById('pageContent').innerHTML = `
         <div class="card">
             <h2>All Payments <button class="btn-primary" onclick="openAddModal()"><i class="fas fa-plus"></i> Record Payment</button></h2>
-            <div style="overflow-x: auto;">
-                <table class="data-table">
+            <div class="members-table-container">
+                <table class="data-table" style="width: 100%;">
                     <thead>
-                        <tr>
-                            <th>Date</th>
-                            <th>Member</th>
-                            <th>Activity</th>
-                            <th>Amount (UGX)</th>
-                            <th>Notes</th>
-                            <th>Action</th>
-                        </tr>
+                        <tr><th>Date</th><th>Member</th><th>Activity</th><th>Amount (UGX)</th><th>Notes</th><th>Action</th></tr>
                     </thead>
                     <tbody>
-                        ${payments.slice(0, 50).map(p => `  <!-- Limit to 50 most recent -->
+                        ${payments.map(p => `
                             <tr>
-                                <td>${new Date(p.payment_date).toLocaleDateString()}</div>
-                                <td><strong>${p.memberName}</strong></div>
-                                <td>${p.activityName}</div>
-                                <td style="color: #27ae60; font-weight: bold;">UGX ${(p.amount || 0).toLocaleString()}</div>
-                                <td>${p.notes || '-'}</div>
-                                <td><button class="btn-delete-payment" onclick="deletePayment(${p.id})"><i class="fas fa-trash-alt"></i> Delete</button></div>
+                                <td>${new Date(p.payment_date).toLocaleDateString()}</td>
+                                <td><strong>${p.memberName}</strong></td>
+                                <td>${p.activityName}</td>
+                                <td style="color: var(--success); font-weight: bold;">UGX ${p.amount.toLocaleString()}</td>
+                                <td>${p.notes || '-'}</td>
+                                <td><button class="btn-delete-payment" onclick="deletePayment(${p.id})"><i class="fas fa-trash-alt"></i> Delete</button></td>
                             </tr>
-                        `).join('')}
+                        `).join('') || '<tr><td colspan="6" style="text-align:center;">No payments recorded</td></tr>'}
                     </tbody>
                 </table>
             </div>
-            ${payments.length > 50 ? `<p style="text-align: center; margin-top: 15px; font-size: 12px; color: #666;">Showing last 50 of ${payments.length} payments</p>` : ''}
         </div>
     `;
 }
 
 // User Payments
 async function renderUserPayments() {
-    // Show loading state
-    document.getElementById('pageContent').innerHTML = `
-        <div class="card">
-            <h2>My Payment History</h2>
-            <div style="text-align: center; padding: 40px;">
-                <i class="fas fa-spinner fa-pulse fa-2x"></i>
-                <p>Loading payment history...</p>
-            </div>
-        </div>
-    `;
-    
     const payments = await getMemberPayments(_currentUser.id);
-    
-    if (payments.length === 0) {
-        document.getElementById('pageContent').innerHTML = `
-            <div class="card">
-                <h2>My Payment History</h2>
-                <div style="text-align: center; padding: 40px;">
-                    <i class="fas fa-receipt" style="font-size: 48px; color: #ccc; margin-bottom: 16px; display: block;"></i>
-                    <p>No payment history found.</p>
-                </div>
-            </div>
-        `;
-        return;
-    }
-    
     document.getElementById('pageContent').innerHTML = `
         <div class="card">
             <h2>My Payment History</h2>
-            <div style="overflow-x: auto;">
-                <table class="data-table">
+            <div class="members-table-container">
+                <table class="data-table" style="width: 100%;">
                     <thead>
-                        <tr>
-                            <th>Date</th>
-                            <th>Activity</th>
-                            <th>Amount (UGX)</th>
-                            <th>Notes</th>
-                        </tr>
+                        <tr><th>Date</th><th>Activity</th><th>Amount (UGX)</th><th>Notes</th></tr>
                     </thead>
                     <tbody>
                         ${payments.map(p => `
                             <tr>
-                                <td>${new Date(p.payment_date).toLocaleDateString()}</div>
-                                <td>${p.activityName}</div>
-                                <td style="color: #27ae60; font-weight: bold;">UGX ${(p.amount || 0).toLocaleString()}</div>
-                                <td>${p.notes || '-'}</div>
+                                <td>${new Date(p.payment_date).toLocaleDateString()}</td>
+                                <td>${p.activityName}</td>
+                                <td style="color: var(--success); font-weight: bold;">UGX ${p.amount.toLocaleString()}</td>
+                                <td>${p.notes || '-'}</td>
                             </tr>
-                        `).join('')}
+                        `).join('') || '<tr><td colspan="4" style="text-align:center;">No payment history</td></tr>'}
                     </tbody>
                 </table>
             </div>
-        </div>
-    `;
-}
-
-let currentPaymentPage = 1;
-const PAYMENTS_PER_PAGE = 20;
-
-async function renderAdminPaymentsPaginated(page = 1) {
-    currentPaymentPage = page;
-    const start = (page - 1) * PAYMENTS_PER_PAGE;
-    const end = start + PAYMENTS_PER_PAGE;
-    
-    document.getElementById('pageContent').innerHTML = `
-        <div class="card">
-            <h2>All Payments <button class="btn-primary" onclick="openAddModal()"><i class="fas fa-plus"></i> Record Payment</button></h2>
-            <div style="text-align: center; padding: 20px;">
-                <i class="fas fa-spinner fa-pulse"></i> Loading payments...
-            </div>
-        </div>
-    `;
-    
-    const { data: payments, error, count } = await _supabase
-        .from('payments')
-        .select(`
-            *,
-            family_members(name),
-            activities(name)
-        `, { count: 'exact' })
-        .order('payment_date', { ascending: false })
-        .range(start, end - 1);
-    
-    if (error) {
-        console.error('Error fetching payments:', error);
-        return;
-    }
-    
-    const formattedPayments = payments.map(p => ({
-        ...p,
-        memberName: p.family_members?.name || 'Unknown',
-        activityName: p.activities?.name || 'Unknown'
-    }));
-    
-    const totalPages = Math.ceil(count / PAYMENTS_PER_PAGE);
-    
-    document.getElementById('pageContent').innerHTML = `
-        <div class="card">
-            <h2>All Payments <button class="btn-primary" onclick="openAddModal()"><i class="fas fa-plus"></i> Record Payment</button></h2>
-            ${formattedPayments.length === 0 ? `
-                <div style="text-align: center; padding: 40px;">
-                    <i class="fas fa-receipt" style="font-size: 48px; color: #ccc; margin-bottom: 16px; display: block;"></i>
-                    <p>No payments recorded yet.</p>
-                </div>
-            ` : `
-                <div style="overflow-x: auto;">
-                    <table class="data-table">
-                        <thead>
-                            <tr><th>Date</th><th>Member</th><th>Activity</th><th>Amount (UGX)</th><th>Notes</th><th>Action</th></tr>
-                        </thead>
-                        <tbody>
-                            ${formattedPayments.map(p => `
-                                <tr>
-                                    <td>${new Date(p.payment_date).toLocaleDateString()}</div>
-                                    <td><strong>${p.memberName}</strong></div>
-                                    <td>${p.activityName}</div>
-                                    <td style="color: #27ae60; font-weight: bold;">UGX ${(p.amount || 0).toLocaleString()}</div>
-                                    <td>${p.notes || '-'}</div>
-                                    <td><button class="btn-delete-payment" onclick="deletePayment(${p.id})"><i class="fas fa-trash-alt"></i> Delete</button></div>
-                                </tr>
-                            `).join('')}
-                        </tbody>
-                    </table>
-                </div>
-                ${totalPages > 1 ? `
-                    <div style="display: flex; justify-content: center; gap: 10px; margin-top: 20px;">
-                        <button class="btn-primary" onclick="renderAdminPaymentsPaginated(${page - 1})" ${page === 1 ? 'disabled' : ''}>&laquo; Previous</button>
-                        <span style="padding: 8px 16px;">Page ${page} of ${totalPages}</span>
-                        <button class="btn-primary" onclick="renderAdminPaymentsPaginated(${page + 1})" ${page === totalPages ? 'disabled' : ''}>Next &raquo;</button>
-                    </div>
-                ` : ''}
-            `}
         </div>
     `;
 }
@@ -2066,93 +1951,57 @@ async function renderContacts() {
         return;
     }
     
-    // For regular users - Compact Card Layout (SHOWS BOARD POSITION)
+    // For regular users - Compact Card Layout
     if (_currentRole === 'user') {
         document.getElementById('pageContent').innerHTML = `
             <div class="card" style="padding: 12px;">
                 <h2 style="font-size: 16px; margin-bottom: 10px;"><i class="fas fa-address-book"></i> Family Contacts</h2>
                 <div class="contact-card-list">
-                    ${members.map(m => {
-                        // DEBUG: Log to see if board_position exists
-                        console.log('Member:', m.name, 'Type:', m.member_type, 'Position:', m.board_position);
-                        
-                        // Determine display for board members with position
-                        let roleDisplay = '';
-                        if (m.member_type === 'board') {
-                            // Get the position value - handle different possible field names
-                            let position = m.board_position || m.position || '';
-                            let positionDisplay = '';
-                            
-                            if (position && position !== '') {
-                                // Format the position nicely
-                                let formattedPosition = position.charAt(0).toUpperCase() + position.slice(1).replace('_', ' ');
-                                positionDisplay = `
-                                    <span class="board-position-chip">
-                                        <i class="fas fa-briefcase"></i> ${formattedPosition}
-                                    </span>
-                                `;
-                            }
-                            
-                            roleDisplay = `
-                                <div style="margin-bottom: 4px;">
-                                    <span class="contact-role-badge board">
-                                        <i class="fas fa-crown"></i> Board Member
-                                    </span>
-                                    ${positionDisplay}
+                    ${members.map(m => `
+                        <div class="contact-card" onclick="showMemberDetails(${m.id})">
+                            <div class="contact-row">
+                                <div class="contact-avatar">
+                                    ${m.profile_picture ? 
+                                        `<img src="${m.profile_picture}" class="contact-avatar-img" alt="${m.name}">` : 
+                                        `<div class="contact-avatar-img" style="background: linear-gradient(135deg, #ff862d, #01605a); display: flex; align-items: center; justify-content: center;">
+                                            <i class="fas ${m.member_type === 'board' ? 'fa-crown' : (m.member_type === 'parent' ? 'fa-user-tie' : 'fa-user-child')}" style="font-size: 18px;"></i>
+                                        </div>`
+                                    }
                                 </div>
-                            `;
-                        } else {
-                            roleDisplay = `
-                                <span class="contact-role-badge ${m.member_type === 'parent' ? 'parent' : (m.member_type === 'child' ? 'child' : 'dependent')}">
-                                    ${m.member_type === 'parent' ? '👨‍👩 Parent' : (m.member_type === 'child' ? '🧒 Child' : '👶 Dependent')}
-                                </span>
-                            `;
-                        }
-                        
-                        return `
-                            <div class="contact-card" onclick="showMemberDetails(${m.id})">
-                                <div class="contact-row">
-                                    <div class="contact-avatar">
-                                        ${m.profile_picture ? 
-                                            `<img src="${m.profile_picture}" class="contact-avatar-img" alt="${m.name}">` : 
-                                            `<div class="contact-avatar-img" style="background: linear-gradient(135deg, #ff862d, #01605a); display: flex; align-items: center; justify-content: center;">
-                                                <i class="fas ${m.member_type === 'board' ? 'fa-crown' : (m.member_type === 'parent' ? 'fa-user-tie' : 'fa-user-child')}" style="font-size: 18px;"></i>
-                                            </div>`
-                                        }
+                                <div class="contact-info">
+                                    <div class="contact-name">
+                                        ${m.name}
+                                        ${m.id === _currentUser.id ? '<span class="you-badge">You</span>' : ''}
+                                        <span class="contact-role-badge ${m.member_type === 'board' ? 'board' : (m.member_type === 'parent' ? 'parent' : (m.member_type === 'child' ? 'child' : 'dependent'))}">
+                                            ${m.member_type === 'board' ? 'Board' : (m.member_type === 'parent' ? 'Parent' : (m.member_type === 'child' ? 'Child' : 'Dep'))}
+                                        </span>
                                     </div>
-                                    <div class="contact-info">
-                                        <div class="contact-name">
-                                            ${m.name}
-                                            ${m.id === _currentUser.id ? '<span class="you-badge">You</span>' : ''}
-                                        </div>
-                                        ${roleDisplay}
-                                        <div class="contact-details">
-                                            ${m.phone ? `<div class="contact-phone"><i class="fas fa-phone-alt"></i> ${m.phone}</div>` : ''}
-                                            ${m.location ? `<div class="contact-phone"><i class="fas fa-map-marker-alt"></i> ${m.location}</div>` : ''}
-                                        </div>
+                                    <div class="contact-details">
+                                        ${m.phone ? `<div class="contact-phone"><i class="fas fa-phone-alt"></i> ${m.phone}</div>` : ''}
+                                        ${!m.phone && m.email ? `<div class="contact-email"><i class="fas fa-envelope"></i> ${m.email.substring(0, 20)}${m.email.length > 20 ? '...' : ''}</div>` : ''}
                                     </div>
-                                    <div class="contact-actions" onclick="event.stopPropagation()">
-                                        ${m.phone ? `
-                                            <button class="contact-action-btn whatsapp" onclick="sendWhatsApp('${m.phone}', 'Hello ${m.name} from OBUNANGWE BULAIIRE!')" title="WhatsApp">
-                                                <i class="fab fa-whatsapp"></i>
-                                            </button>
-                                            <button class="contact-action-btn call" onclick="makeCall('${m.phone}')" title="Call">
-                                                <i class="fas fa-phone"></i>
-                                            </button>
-                                            <button class="contact-action-btn sms" onclick="sendSMS('${m.phone}', 'Hello from OBUNANGWE BULAIIRE!')" title="SMS">
-                                                <i class="fas fa-comment"></i>
-                                            </button>
-                                        ` : ''}
-                                    </div>
+                                </div>
+                                <div class="contact-actions" onclick="event.stopPropagation()">
+                                    ${m.phone ? `
+                                        <button class="contact-action-btn whatsapp" onclick="sendWhatsApp('${m.phone}', 'Hello ${m.name} from OBUNANGWE BULAIIRE!')" title="WhatsApp">
+                                            <i class="fab fa-whatsapp"></i>
+                                        </button>
+                                        <button class="contact-action-btn call" onclick="makeCall('${m.phone}')" title="Call">
+                                            <i class="fas fa-phone"></i>
+                                        </button>
+                                        <button class="contact-action-btn sms" onclick="sendSMS('${m.phone}', 'Hello from OBUNANGWE BULAIIRE!')" title="SMS">
+                                            <i class="fas fa-comment"></i>
+                                        </button>
+                                    ` : ''}
                                 </div>
                             </div>
-                        `;
-                    }).join('')}
+                        </div>
+                    `).join('')}
                 </div>
             </div>
         `;
     } 
-    // For admin - Compact Table Layout (SHOWS BOARD POSITION)
+    // For admin - Compact Table Layout
     else {
         document.getElementById('pageContent').innerHTML = `
             <div class="card" style="padding: 12px;">
@@ -2163,73 +2012,44 @@ async function renderContacts() {
                             <tr>
                                 <th style="padding: 8px;">Photo</th>
                                 <th style="padding: 8px;">Name</th>
-                                <th style="padding: 8px;">Role/Position</th>
+                                <th style="padding: 8px;">Type</th>
                                 <th style="padding: 8px;">Phone</th>
                                 <th style="padding: 8px;">Actions</th>
                             </tr>
                         </thead>
                         <tbody>
-                            ${members.map(m => {
-                                // Build Role/Position display for admin table
-                                let rolePositionHtml = '';
-                                if (m.member_type === 'board') {
-                                    let position = m.board_position || m.position || '';
-                                    let positionDisplay = '';
-                                    
-                                    if (position && position !== '') {
-                                        let formattedPosition = position.charAt(0).toUpperCase() + position.slice(1).replace('_', ' ');
-                                        positionDisplay = `
-                                            <div class="position-text">
-                                                <i class="fas fa-briefcase"></i> ${formattedPosition}
-                                            </div>
-                                        `;
-                                    }
-                                    
-                                    rolePositionHtml = `
-                                        <div>
-                                            <span class="role-badge board-badge">
-                                                <i class="fas fa-crown"></i> Board Member
-                                            </span>
-                                            ${positionDisplay}
+                            ${members.map(m => `
+                                <tr onclick="showMemberDetails(${m.id})" style="cursor: pointer;">
+                                    <td style="padding: 8px;">
+                                        ${m.profile_picture ? 
+                                            `<img src="${m.profile_picture}" class="member-avatar-table">` : 
+                                            `<div class="member-avatar-placeholder"><i class="fas ${m.member_type === 'board' ? 'fa-crown' : (m.member_type === 'parent' ? 'fa-user-tie' : 'fa-user-child')}" style="font-size: 14px;"></i></div>`
+                                        }
+                                    </td>
+                                    <td style="padding: 8px; font-weight: 600; color: #01605a;">${m.name}${m.id === _currentUser?.id ? ' <span class="you-badge">You</span>' : ''}</td>
+                                    <td style="padding: 8px;">
+                                        <span class="contact-role-badge ${m.member_type === 'board' ? 'board' : (m.member_type === 'parent' ? 'parent' : (m.member_type === 'child' ? 'child' : 'dependent'))}">
+                                            ${m.member_type === 'board' ? 'Board' : (m.member_type === 'parent' ? 'Parent' : (m.member_type === 'child' ? 'Child' : 'Dep'))}
+                                        </span>
+                                    </td>
+                                    <td style="padding: 8px; font-size: 12px;">${m.phone || '—'}</td>
+                                    <td style="padding: 8px;">
+                                        <div class="table-action-icons" onclick="event.stopPropagation()">
+                                            ${m.phone ? `
+                                                <button class="table-icon-btn whatsapp" onclick="sendWhatsApp('${m.phone}', 'Hello ${m.name} from OBUNANGWE BULAIIRE!')" title="WhatsApp">
+                                                    <i class="fab fa-whatsapp"></i>
+                                                </button>
+                                                <button class="table-icon-btn call" onclick="makeCall('${m.phone}')" title="Call">
+                                                    <i class="fas fa-phone"></i>
+                                                </button>
+                                                <button class="table-icon-btn sms" onclick="sendSMS('${m.phone}', 'Hello from OBUNANGWE BULAIIRE!')" title="SMS">
+                                                    <i class="fas fa-comment"></i>
+                                                </button>
+                                            ` : '<span style="font-size: 11px; color: #999;">—</span>'}
                                         </div>
-                                    `;
-                                } else if (m.member_type === 'parent') {
-                                    rolePositionHtml = `<span class="role-badge parent-badge"><i class="fas fa-user-tie"></i> Parent</span>`;
-                                } else if (m.member_type === 'child') {
-                                    rolePositionHtml = `<span class="role-badge child-badge"><i class="fas fa-user-graduate"></i> Child</span>`;
-                                } else {
-                                    rolePositionHtml = `<span class="role-badge dependent-badge"><i class="fas fa-baby-carriage"></i> Dependent</span>`;
-                                }
-                                
-                                return `
-                                    <tr onclick="showMemberDetails(${m.id})" style="cursor: pointer;">
-                                        <td style="padding: 8px;">
-                                            ${m.profile_picture ? 
-                                                `<img src="${m.profile_picture}" class="member-avatar-table">` : 
-                                                `<div class="member-avatar-placeholder"><i class="fas ${m.member_type === 'board' ? 'fa-crown' : (m.member_type === 'parent' ? 'fa-user-tie' : 'fa-user-child')}" style="font-size: 14px;"></i></div>`
-                                            }
-                                        </td>
-                                        <td style="padding: 8px; font-weight: 600; color: #01605a;">${m.name}${m.id === _currentUser?.id ? ' <span class="you-badge">You</span>' : ''}</td>
-                                        <td style="padding: 8px;">${rolePositionHtml}</td>
-                                        <td style="padding: 8px; font-size: 12px;">${m.phone || '—'}</td>
-                                        <td style="padding: 8px;">
-                                            <div class="table-action-icons" onclick="event.stopPropagation()">
-                                                ${m.phone ? `
-                                                    <button class="table-icon-btn whatsapp" onclick="sendWhatsApp('${m.phone}', 'Hello ${m.name} from OBUNANGWE BULAIIRE!')" title="WhatsApp">
-                                                        <i class="fab fa-whatsapp"></i>
-                                                    </button>
-                                                    <button class="table-icon-btn call" onclick="makeCall('${m.phone}')" title="Call">
-                                                        <i class="fas fa-phone"></i>
-                                                    </button>
-                                                    <button class="table-icon-btn sms" onclick="sendSMS('${m.phone}', 'Hello from OBUNANGWE BULAIIRE!')" title="SMS">
-                                                        <i class="fas fa-comment"></i>
-                                                    </button>
-                                                ` : '<span style="font-size: 11px; color: #999;">—</span>'}
-                                            </div>
-                                        </td>
-                                    </tr>
-                                `;
-                            }).join('')}
+                                    </td>
+                                </tr>
+                            `).join('')}
                         </tbody>
                     </table>
                 </div>
@@ -2237,6 +2057,8 @@ async function renderContacts() {
         `;
     }
 }
+
+
 
 // Admin Reports
 async function renderAdminReports() {
@@ -2801,13 +2623,9 @@ function toggleEditMemberTypeFields() {
     if (memberType === 'board') {
         if (boardPositionDiv) boardPositionDiv.style.display = 'block';
         if (parentSelectDiv) parentSelectDiv.style.display = 'none';
-        // Clear parent selection for board members
-        document.getElementById('editMemberParentId').value = '';
     } else if (memberType === 'parent') {
         if (boardPositionDiv) boardPositionDiv.style.display = 'none';
         if (parentSelectDiv) parentSelectDiv.style.display = 'none';
-        // Clear parent selection for parents
-        document.getElementById('editMemberParentId').value = '';
     } else if (memberType === 'child' || memberType === 'dependent') {
         if (boardPositionDiv) boardPositionDiv.style.display = 'none';
         if (parentSelectDiv) parentSelectDiv.style.display = 'block';
@@ -2903,6 +2721,8 @@ function openEditActivity(id) {
 function openEditMember(id) {
     (async () => {
         const m = (await getFamilyMembers()).find(m => m.id === id);
+        
+        // Populate all fields
         document.getElementById('editMemberId').value = m.id;
         document.getElementById('editMemberName').value = m.name;
         document.getElementById('editMemberPhone').value = m.phone || '';
@@ -2919,24 +2739,25 @@ function openEditMember(id) {
         document.getElementById('editMemberFavoriteColor').value = m.favorite_color || '#01605a';
         document.getElementById('editMemberType').value = m.member_type || (m.role === 'parent' ? 'parent' : 'child');
         document.getElementById('editMemberBoardPosition').value = m.board_position || '';
-        
-        // CRITICAL: Set parentId to empty string if null
         document.getElementById('editMemberParentId').value = m.parent_id || '';
         
         toggleEditMemberTypeFields();
         await populateEditParentDropdown(m.id);
         
+        // Display existing profile picture
         const preview = document.getElementById('editImagePreview');
-        if (m.profile_picture) {
-            preview.innerHTML = `<img src="${m.profile_picture}" alt="${m.name}">`;
-        } else {
-            preview.innerHTML = '<i class="fas fa-camera"></i><span>Change Photo</span>';
+        if (preview) {
+            if (m.profile_picture) {
+                preview.innerHTML = `<img src="${m.profile_picture}" alt="${m.name}" style="width: 100%; height: 100%; object-fit: cover; border-radius: 50%;">`;
+            } else {
+                preview.innerHTML = '<i class="fas fa-camera" style="font-size: 40px; color: white;"></i>';
+            }
         }
-        window._editImageBase64 = null;
+        
+        window._editImageFile = null;
         document.getElementById('editMemberModal').style.display = 'flex';
     })();
 }
-
 function closeModal(modalId) {
     const modal = document.getElementById(modalId);
     if (modal) {
@@ -3084,7 +2905,6 @@ function showAdminDashboard() {
     document.getElementById('reportsNav').style.display = 'flex';
     document.getElementById('securityNav').style.display = 'flex';
     document.getElementById('notificationBell').style.display = 'flex';
-    startOfflineSupport();
     
     _currentPage = 'dashboard';
     setupRealtimeNotifications();
@@ -3109,7 +2929,6 @@ function showUserDashboard() {
     document.getElementById('notificationBell').style.display = 'flex';
     _currentPage = 'dashboard';
     setupRealtimeNotifications();
-    startOfflineSupport();
     renderCurrentPage();
     queueToast(`👋 Welcome ${_currentUser.name}`, 'You can view your activities and payment status.', 'info', 4000);
 }
@@ -3269,25 +3088,29 @@ if (addMemberForm) {
         
         try {
             const memberType = document.getElementById('memberType').value;
-            const boardPosition = document.getElementById('memberBoardPosition').value;
-            const parentId = document.getElementById('memberParentId').value;
+            const boardPosition = document.getElementById('memberBoardPosition')?.value;
+            const parentId = document.getElementById('memberParentId')?.value;
+            
+            // IMPORTANT: Get the image file from the global variable
+            const imageFile = window._currentImageFile || null;
+            console.log('📷 Image file from preview:', imageFile ? imageFile.name : 'No image');
             
             const result = await addMember(
                 document.getElementById('memberName').value,
                 document.getElementById('memberRole')?.value || (memberType === 'parent' ? 'parent' : 'child'),
                 document.getElementById('memberPhone').value,
                 document.getElementById('memberEmail').value,
-                window._addImageBase64 || null,
-                document.getElementById('memberDob').value,
-                document.getElementById('memberBloodGroup').value,
-                document.getElementById('memberAllergies').value,
-                document.getElementById('memberEmergencyContact').value,
-                document.getElementById('memberOccupation').value,
-                document.getElementById('memberLocation').value,
-                document.getElementById('memberMaritalStatus').value,
-                document.getElementById('memberAnniversary').value,
-                document.getElementById('memberBio').value,
-                document.getElementById('memberFavoriteColor').value,
+                imageFile,  // Pass the file object
+                document.getElementById('memberDob')?.value,
+                document.getElementById('memberBloodGroup')?.value,
+                document.getElementById('memberAllergies')?.value,
+                document.getElementById('memberEmergencyContact')?.value,
+                document.getElementById('memberOccupation')?.value,
+                document.getElementById('memberLocation')?.value,
+                document.getElementById('memberMaritalStatus')?.value,
+                document.getElementById('memberAnniversary')?.value,
+                document.getElementById('memberBio')?.value,
+                document.getElementById('memberFavoriteColor')?.value,
                 memberType,
                 boardPosition,
                 parentId
@@ -3297,13 +3120,15 @@ if (addMemberForm) {
                 closeModal('addMemberModal');
                 newForm.reset();
                 const preview = document.getElementById('addImagePreview');
-                if (preview) preview.innerHTML = '<i class="fas fa-camera"></i><span>Add Photo</span>';
-                window._addImageFile || null
+                if (preview) preview.innerHTML = '<i class="fas fa-camera" style="font-size: 40px; color: #ccc;"></i>';
+                window._currentImageFile = null;
+                const imageInput = document.getElementById('addImageInput');
+                if (imageInput) imageInput.value = '';
                 await renderCurrentPage();
                 queueToast('✅ Member Added', 'New family member has been added successfully.', 'success', 3000);
             }
         } catch (error) {
-            console.error('Error adding member:', error);
+            console.error('❌ Error adding member:', error);
             Swal.fire('Error', 'Failed to add member. Please try again.', 'error');
         } finally {
             submitBtn.innerHTML = originalText;
@@ -3311,7 +3136,6 @@ if (addMemberForm) {
         }
     });
 }
-
 // Edit Member Form Submit Handler
 const editMemberForm = document.getElementById('editMemberForm');
 if (editMemberForm) {
@@ -3328,18 +3152,16 @@ if (editMemberForm) {
         
         try {
             const memberType = document.getElementById('editMemberType').value;
-            const boardPosition = document.getElementById('editMemberBoardPosition').value;
-            let parentId = document.getElementById('editMemberParentId').value;
+            const boardPosition = document.getElementById('editMemberBoardPosition')?.value;
+            const parentId = document.getElementById('editMemberParentId')?.value;
             
-            // CRITICAL: Convert empty string to null
-            if (parentId === '' || parentId === 'null' || parentId === 'undefined') {
-                parentId = null;
-            }
+            // Get the image file from input (same as add member)
+            const imageInput = document.getElementById('editImageInput');
+            const imageFile = imageInput && imageInput.files && imageInput.files.length > 0 
+                ? imageInput.files[0] 
+                : null;
             
-            // If member is board or parent, parentId should be null
-            if (memberType === 'board' || memberType === 'parent') {
-                parentId = null;
-            }
+            console.log('📷 Edit - Image file:', imageFile ? imageFile.name : 'No new image');
             
             const result = await updateMember(
                 parseInt(document.getElementById('editMemberId').value),
@@ -3347,50 +3169,37 @@ if (editMemberForm) {
                 document.getElementById('editMemberRole')?.value || (memberType === 'parent' ? 'parent' : 'child'),
                 document.getElementById('editMemberPhone').value,
                 document.getElementById('editMemberEmail').value,
-                window._editImageFile || null,
-                document.getElementById('editMemberDob').value,
-                document.getElementById('editMemberBloodGroup').value,
-                document.getElementById('editMemberAllergies').value,
-                document.getElementById('editMemberEmergencyContact').value,
-                document.getElementById('editMemberOccupation').value,
-                document.getElementById('editMemberLocation').value,
-                document.getElementById('editMemberMaritalStatus').value,
-                document.getElementById('editMemberAnniversary').value,
-                document.getElementById('editMemberBio').value,
-                document.getElementById('editMemberFavoriteColor').value,
+                imageFile,  // Same as add member - pass the File object or null
+                document.getElementById('editMemberDob')?.value,
+                document.getElementById('editMemberBloodGroup')?.value,
+                document.getElementById('editMemberAllergies')?.value,
+                document.getElementById('editMemberEmergencyContact')?.value,
+                document.getElementById('editMemberOccupation')?.value,
+                document.getElementById('editMemberLocation')?.value,
+                document.getElementById('editMemberMaritalStatus')?.value,
+                document.getElementById('editMemberAnniversary')?.value,
+                document.getElementById('editMemberBio')?.value,
+                document.getElementById('editMemberFavoriteColor')?.value,
                 memberType,
                 boardPosition,
-                parentId  // This will be null for board/parent members
+                parentId
             );
             
             if (result) {
                 closeModal('editMemberModal');
+                // Clear the file input
+                if (imageInput) imageInput.value = '';
                 await renderCurrentPage();
-                Swal.fire('Success!', 'Member updated successfully', 'success');
             }
         } catch (error) {
-            console.error('Error updating member:', error);
-            
-            // Close modal first
-            closeModal('editMemberModal');
-            
-            // Show error in front
-            setTimeout(() => {
-                Swal.fire({
-                    title: 'Error!',
-                    text: error.message || 'Failed to update member. Please check your input.',
-                    icon: 'error',
-                    confirmButtonText: 'OK',
-                    confirmButtonColor: '#e74c3c'
-                });
-            }, 100);
+            console.error('❌ Error updating member:', error);
+            Swal.fire('Error', 'Failed to update member. Please try again.', 'error');
         } finally {
             submitBtn.innerHTML = originalText;
             submitBtn.disabled = false;
         }
     });
 }
-
 document.getElementById('paymentForm')?.addEventListener('submit', async (e) => {
     e.preventDefault();
     if (await recordPayment(parseInt(paymentActivityId.value), parseInt(paymentMemberId.value), parseFloat(paymentAmount.value), paymentDate.value, paymentNotes.value)) {
@@ -3410,258 +3219,6 @@ document.getElementById('editActivityForm')?.addEventListener('submit', async (e
 
 // Initialize birthday checker
 setInterval(checkBirthdays, 86400000);
-
-// ============================================
-// OFFLINE SUPPORT FUNCTIONS
-// ============================================
-
-let isOnline = navigator.onLine;
-let pendingOperations = [];
-
-// Check online status
-function updateOnlineStatus() {
-    isOnline = navigator.onLine;
-    
-    if (isOnline) {
-        console.log('Back online - syncing data...');
-        syncPendingOperations();
-        showOnlineStatus('Back Online! Syncing data...', 'success');
-    } else {
-        console.log('Offline mode');
-        showOnlineStatus('You are offline. Changes will sync when online.', 'warning');
-    }
-}
-
-// Show online/offline status
-function showOnlineStatus(message, type) {
-    let statusBar = document.getElementById('onlineStatus');
-    if (!statusBar) {
-        statusBar = document.createElement('div');
-        statusBar.id = 'onlineStatus';
-        statusBar.className = 'online-status';
-        document.body.appendChild(statusBar);
-    }
-    
-    statusBar.textContent = message;
-    statusBar.className = `online-status ${type}`;
-    statusBar.style.display = 'block';
-    
-    setTimeout(() => {
-        statusBar.style.display = 'none';
-    }, 3000);
-}
-
-// Save operation for offline sync
-function saveOfflineOperation(operation, data) {
-    pendingOperations.push({
-        id: Date.now(),
-        operation: operation,
-        data: data,
-        timestamp: new Date().toISOString()
-    });
-    
-    localStorage.setItem('pendingOperations', JSON.stringify(pendingOperations));
-    showOnlineStatus('Saved offline. Will sync when online.', 'info');
-}
-
-// Sync pending operations when back online
-async function syncPendingOperations() {
-    const saved = localStorage.getItem('pendingOperations');
-    if (!saved) return;
-    
-    pendingOperations = JSON.parse(saved);
-    
-    if (pendingOperations.length === 0) return;
-    
-    showOnlineStatus(`Syncing ${pendingOperations.length} pending operations...`, 'info');
-    
-    for (const op of pendingOperations) {
-        try {
-            if (op.operation === 'payment') {
-                await _supabase.from('payments').insert(op.data);
-            } else if (op.operation === 'activity') {
-                await _supabase.from('activities').insert(op.data);
-            }
-            pendingOperations = pendingOperations.filter(p => p.id !== op.id);
-        } catch (error) {
-            console.error('Sync failed for operation:', op, error);
-        }
-    }
-    
-    localStorage.setItem('pendingOperations', JSON.stringify(pendingOperations));
-    
-    if (pendingOperations.length === 0) {
-        showOnlineStatus('All data synced successfully!', 'success');
-        await loadData();
-        await renderCurrentPage();
-    }
-}
-
-// Enhanced recordPayment with offline support
-async function recordPaymentOffline(activityId, memberId, amount, date, notes) {
-    if (!isOnline) {
-        saveOfflineOperation('payment', {
-            activity_id: activityId,
-            member_id: memberId,
-            amount: parseFloat(amount),
-            payment_date: date,
-            notes: notes
-        });
-        
-        Swal.fire({
-            title: 'Saved Offline',
-            text: 'You are offline. This payment will be saved and synced when you reconnect.',
-            icon: 'info',
-            confirmButtonText: 'OK'
-        });
-        return true;
-    }
-    
-    return await recordPayment(activityId, memberId, amount, date, notes);
-}
-
-// Cache data for offline use
-async function cacheOfflineData() {
-    if (!isOnline) return;
-    
-    try {
-        const cache = await caches.open('obunangwe-data-v1');
-        
-        const activities = _activities;
-        const members = _familyMembers;
-        
-        await cache.put('/api/activities', new Response(JSON.stringify(activities)));
-        await cache.put('/api/members', new Response(JSON.stringify(members)));
-        
-        console.log('Offline data cached');
-    } catch (error) {
-        console.error('Cache failed:', error);
-    }
-}
-
-// Load cached data when offline
-async function loadCachedData() {
-    if (isOnline) return;
-    
-    try {
-        const cache = await caches.open('obunangwe-data-v1');
-        
-        const cachedActivities = await cache.match('/api/activities');
-        const cachedMembers = await cache.match('/api/members');
-        
-        if (cachedActivities) {
-            const activities = await cachedActivities.json();
-            _activities = activities;
-            console.log('Loaded activities from cache');
-        }
-        
-        if (cachedMembers) {
-            const members = await cachedMembers.json();
-            _familyMembers = members;
-            console.log('Loaded members from cache');
-        }
-        
-        await renderCurrentPage();
-        showOnlineStatus('Showing cached data. Connect to internet for updates.', 'warning');
-    } catch (error) {
-        console.error('Failed to load cached data:', error);
-    }
-}
-
-// Initialize offline support
-function initOfflineSupport() {
-    updateOnlineStatus();
-    
-    // Show offline banner
-    function showOfflineBanner() {
-        let banner = document.getElementById('offlineBanner');
-        if (!isOnline) {
-            if (!banner) {
-                banner = document.createElement('div');
-                banner.id = 'offlineBanner';
-                banner.innerHTML = `
-                    <div style="background: #f39c12; color: white; text-align: center; padding: 8px; font-size: 12px; position: fixed; bottom: 0; left: 0; right: 0; z-index: 10000;">
-                        <i class="fas fa-wifi-slash"></i> You are offline. Changes will be saved and synced when online.
-                    </div>
-                `;
-                document.body.appendChild(banner);
-            }
-        } else {
-            if (banner) banner.remove();
-        }
-    }
-    
-    showOfflineBanner();
-    
-    // Register service worker for offline support
-    if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.register('/sw.js')
-            .then(registration => {
-                console.log('Service Worker registered with scope:', registration.scope);
-            })
-            .catch(error => {
-                console.error('Service Worker registration failed:', error);
-            });
-    }
-    
-    // Periodically check online status
-    setInterval(() => {
-        if (isOnline !== navigator.onLine) {
-            updateOnlineStatus();
-            showOfflineBanner();
-            if (isOnline) {
-                loadCachedData();
-            }
-        }
-    }, 3000);
-    
-    // Cache data every 5 minutes when online
-    setInterval(() => {
-        if (isOnline) {
-            cacheOfflineData();
-        }
-    }, 300000);
-}
-
-// Add event listeners for online/offline
-window.addEventListener('online', () => {
-    isOnline = true;
-    updateOnlineStatus();
-    syncPendingOperations();
-    loadData();
-});
-
-window.addEventListener('offline', () => {
-    isOnline = false;
-    updateOnlineStatus();
-    loadCachedData();
-});
-
-// Call this after login
-function startOfflineSupport() {
-    initOfflineSupport();
-    loadCachedData();
-}
-
-// Request notification permission
-async function requestNotificationPermission() {
-    if ('Notification' in window) {
-        const permission = await Notification.requestPermission();
-        if (permission === 'granted') {
-            console.log('Notification permission granted');
-        }
-    }
-}
-
-// Check if app is installed as PWA
-function isPWAInstalled() {
-    return window.matchMedia('(display-mode: standalone)').matches || 
-           window.navigator.standalone === true;
-}
-
-// Update startOfflineSupport call in showAdminDashboard and showUserDashboard
-// Add this line at the end of both functions:
-// startOfflineSupport();
 
 // ============================================
 // EXPOSE GLOBAL FUNCTIONS
