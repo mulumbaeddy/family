@@ -4727,24 +4727,112 @@ async function renderSecurity() {
         </div>
     `;
 }
+// ============================================
+// COMPLETE FIXED RENDER CURRENT PAGE
+// ============================================
 async function renderCurrentPage() {
-    if (_currentRole === 'admin') {
-        if (_currentPage === 'dashboard') await renderAdminDashboard();
-        else if (_currentPage === 'activities') await renderAdminActivities();
-        else if (_currentPage === 'members') await renderAdminMembers();
-        else if (_currentPage === 'payments') await renderAdminPayments();
-        else if (_currentPage === 'paymentsummary') await renderPaymentSummary();
-        else if (_currentPage === 'contacts') await renderContacts();
-        else if (_currentPage === 'reports') await renderAdminReports();
-        else if (_currentPage === 'security') await renderSecurity();
-        else await renderAdminDashboard();
-    } else {
-        if (_currentPage === 'dashboard') await renderUserDashboard();
-        else if (_currentPage === 'myactivities') await renderUserMyActivities();
-        else if (_currentPage === 'payments') await renderUserPayments();
-        else if (_currentPage === 'contacts') await renderContacts();
-        else if (_currentPage === 'reports') await renderUserReports();
-        else await renderUserDashboard();
+    console.log('🔄 Rendering page:', _currentPage, 'Role:', _currentRole);
+    
+    if (!_currentPage) {
+        _currentPage = 'dashboard';
+    }
+    
+    const pageContent = document.getElementById('pageContent');
+    if (!pageContent) {
+        console.error('Page content element not found!');
+        return;
+    }
+    
+    try {
+        // ADMIN PAGES
+        if (_currentRole === 'admin') {
+            switch (_currentPage) {
+                case 'dashboard':
+                    await renderAdminDashboard();
+                    break;
+                case 'myactivities':
+                    await renderUserMyActivities(); // Admin can also see their activities
+                    break;
+                case 'activities':
+                    await renderAdminActivities();
+                    break;
+                case 'members':
+                    await renderAdminMembers();
+                    break;
+                case 'familytree':
+                    await renderFamilyTree();
+                    break;
+                case 'payments':
+                    await renderAdminPayments();
+                    break;
+                case 'paymentsummary':
+                    await renderPaymentSummary();
+                    break;
+                case 'contacts':
+                    await renderContacts();
+                    break;
+                case 'reports':
+                    await renderAdminReports();
+                    break;
+                case 'security':
+                    await renderSecurity();
+                    break;
+                default:
+                    await renderAdminDashboard();
+                    _currentPage = 'dashboard';
+            }
+        } 
+        // USER PAGES
+        else if (_currentRole === 'user') {
+            switch (_currentPage) {
+                case 'dashboard':
+                    await renderUserDashboard();
+                    break;
+                case 'myactivities':
+                    await renderUserMyActivities();
+                    break;
+                case 'familytree':
+                    await renderFamilyTree();
+                    break;
+                case 'payments':
+                    await renderUserPayments();
+                    break;
+                case 'contacts':
+                    await renderContacts();
+                    break;
+                case 'reports':
+                    await renderUserReports();
+                    break;
+                case 'activities':
+                case 'members':
+                case 'paymentsummary':
+                case 'security':
+                    // These pages are not available for users
+                    _currentPage = 'dashboard';
+                    await renderUserDashboard();
+                    Swal.fire('Access Denied', 'This page is only available for administrators', 'warning');
+                    break;
+                default:
+                    await renderUserDashboard();
+                    _currentPage = 'dashboard';
+            }
+        }
+        else {
+            // Not logged in
+            pageContent.innerHTML = '<div class="card"><div style="text-align:center;padding:40px;"><i class="fas fa-exclamation-triangle"></i> Please login to continue.</div></div>';
+        }
+    } catch (error) {
+        console.error('Error rendering page:', error);
+        pageContent.innerHTML = `
+            <div class="card">
+                <div style="text-align: center; padding: 40px;">
+                    <i class="fas fa-exclamation-triangle" style="font-size: 48px; color: var(--danger); margin-bottom: 15px; display: block;"></i>
+                    <h3>Error Loading Page</h3>
+                    <p>${error.message}</p>
+                    <button class="btn-primary" onclick="location.reload()">Reload Page</button>
+                </div>
+            </div>
+        `;
     }
 }
 
@@ -4983,34 +5071,70 @@ async function changePassword() {
     }
 }
 
+// ============================================
+// COMPLETE FIXED SWITCH PAGE
+// ============================================
 function switchPage(page) {
+    console.log('🔄 Switching to page:', page);
+    
+    // Update current page
     _currentPage = page;
-    document.querySelectorAll('.nav-item').forEach(item => item.classList.remove('active'));
-    if (window.event && window.event.target) {
-        const clickedItem = window.event.target.closest('.nav-item');
-        if (clickedItem) clickedItem.classList.add('active');
+    
+    // Update active class on navigation items
+    document.querySelectorAll('.nav-item').forEach(item => {
+        item.classList.remove('active');
+    });
+    
+    // Find and highlight the clicked nav item
+    const navItems = document.querySelectorAll('.nav-item');
+    for (let i = 0; i < navItems.length; i++) {
+        const item = navItems[i];
+        const onclickAttr = item.getAttribute('onclick');
+        if (onclickAttr && onclickAttr.includes(`switchPage('${page}')`)) {
+            item.classList.add('active');
+            break;
+        }
     }
+    
+    // Update page title
     const titles = { 
         dashboard: 'Dashboard', 
         myactivities: 'My Activities', 
         activities: 'Activities', 
         members: 'Members', 
+        familytree: 'Family Tree',
         payments: 'Payments', 
         paymentsummary: 'Payment Summary',
         contacts: 'Contacts', 
         reports: 'Reports', 
         security: 'Security' 
     };
-    document.getElementById('pageTitle').innerHTML = `<i class="fas ${getPageIcon(page)}"></i> ${titles[page] || page}`;
+    
+    const pageTitle = document.getElementById('pageTitle');
+    if (pageTitle) {
+        pageTitle.innerHTML = `<i class="fas ${getPageIcon(page)}"></i> ${titles[page] || page}`;
+    }
+    
+    // Update FAB button visibility
+    const fab = document.getElementById('fabButton');
+    if (fab) {
+        const showFab = (_currentRole === 'admin' && (page === 'activities' || page === 'members' || page === 'payments'));
+        fab.style.display = showFab ? 'flex' : 'none';
+    }
+    
+    // Render the page
     renderCurrentPage();
 }
-
+// ============================================
+// GET PAGE ICON
+// ============================================
 function getPageIcon(page) {
     const icons = { 
         dashboard: 'fa-tachometer-alt', 
         myactivities: 'fa-list', 
         activities: 'fa-tasks', 
         members: 'fa-users', 
+        familytree: 'fa-tree',
         payments: 'fa-money-bill-wave', 
         paymentsummary: 'fa-chart-pie',
         contacts: 'fa-address-book', 
@@ -5019,7 +5143,6 @@ function getPageIcon(page) {
     };
     return icons[page] || 'fa-folder';
 }
-
 function toggleSidebar() { 
     toggleMobileSidebar(); 
 }
@@ -6846,6 +6969,928 @@ async function showActivityDetails(activityId) {
     document.getElementById('activityDetailsModal').style.display = 'flex';
 }
 
+
+// ============================================
+// COMPLETE FAMILY TREE SYSTEM
+// Supports unlimited members (20+ people)
+// ============================================
+
+let _familyTreeData = [];
+
+// Load family tree data from database
+async function loadFamilyTreeData() {
+    const { data, error } = await _supabase
+        .from('family_tree')
+        .select('*')
+        .order('generation_level', { ascending: true })
+        .order('birth_order', { ascending: true });
+    
+    if (error) {
+        console.error('Error loading family tree:', error);
+        return [];
+    }
+    
+    _familyTreeData = data || [];
+    return _familyTreeData;
+}
+
+// Render Family Tree page (standalone module)
+// ============================================
+// COMPLETE FAMILY TREE MODULE
+// ADMIN: Full customization (Add, Edit, Delete)
+// USER: View only (No buttons, just view)
+// ============================================
+
+
+// Load family tree data
+async function loadFamilyTreeData() {
+    const { data, error } = await _supabase.from('family_tree').select('*').order('generation_level', { ascending: true });
+    if (!error) _familyTreeData = data || [];
+    return _familyTreeData;
+}
+
+// Main render function
+async function renderFamilyTree() {
+    await loadFamilyTreeData();
+    
+    if (_currentRole === 'admin') {
+        await renderFamilyTreeAdmin();
+    } else {
+        await renderFamilyTreeUser();
+    }
+}
+
+// ============================================
+// ADMIN VIEW - FULL CUSTOMIZATION
+// ============================================
+async function renderFamilyTreeAdmin() {
+    const people = _familyTreeData;
+    const totalMembers = people.length;
+    const generations = [...new Set(people.map(p => p.generation_level).filter(l => l !== null))].length || 1;
+    
+    // Group by generation
+    const grouped = {};
+    people.forEach(p => { 
+        const gen = p.generation_level !== null ? p.generation_level : 0;
+        if (!grouped[gen]) grouped[gen] = [];
+        grouped[gen].push(p);
+    });
+    const sortedGens = Object.keys(grouped).sort((a,b) => a - b);
+    
+    const genLabels = {
+        '-4': '🏛️ 4th Generation (Great Great Grandparents)',
+        '-3': '🏛️ 3rd Generation (Great Grandparents)',
+        '-2': '🏛️ 2nd Generation (Grandparents)',
+        '-1': '👨‍👩 1st Generation (Parents)',
+        '0': '⭐ Current Generation',
+        '1': '👶 Next Generation (Children)',
+        '2': '👶 2nd Generation (Grandchildren)'
+    };
+    
+    document.getElementById('pageContent').innerHTML = `
+        <style>
+            .ft-container { background: #f5f5f5; border-radius: 20px; padding: 20px; }
+            .ft-header { background: linear-gradient(135deg, #01605a, #0a7a72); border-radius: 16px; padding: 20px; margin-bottom: 20px; color: white; display: flex; justify-content: space-between; flex-wrap: wrap; gap: 15px; }
+            .ft-stats { display: flex; gap: 30px; }
+            .ft-stat { text-align: center; }
+            .ft-stat-num { font-size: 28px; font-weight: 800; }
+            .ft-controls { display: flex; gap: 12px; margin-bottom: 20px; flex-wrap: wrap; }
+            .ft-search { flex: 1; padding: 10px 16px; border: 1px solid #ddd; border-radius: 30px; font-size: 14px; }
+            .ft-btn { padding: 10px 20px; border-radius: 30px; border: none; cursor: pointer; font-weight: 500; }
+            .ft-btn-primary { background: #27ae60; color: white; }
+            .ft-btn-secondary { background: #6c757d; color: white; }
+            .ft-generation { margin-bottom: 30px; border-left: 4px solid #ff862d; padding-left: 20px; }
+            .ft-gen-title { font-size: 15px; font-weight: 700; color: #01605a; margin-bottom: 15px; }
+            .ft-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; }
+            .ft-card { background: white; border-radius: 16px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.08); transition: all 0.3s; }
+            .ft-card:hover { transform: translateY(-4px); box-shadow: 0 10px 25px rgba(0,0,0,0.15); }
+            .ft-card-header { background: linear-gradient(135deg, #ff862d, #01605a); padding: 15px; color: white; display: flex; align-items: center; gap: 12px; }
+            .ft-card-header.deceased { background: #6c757d; }
+            .ft-avatar { width: 50px; height: 50px; border-radius: 50%; background: rgba(255,255,255,0.2); display: flex; align-items: center; justify-content: center; font-size: 24px; overflow: hidden; }
+            .ft-avatar img { width: 100%; height: 100%; object-fit: cover; }
+            .ft-card-name { font-size: 16px; font-weight: 700; }
+            .ft-card-detail { font-size: 11px; opacity: 0.9; }
+            .ft-card-body { padding: 15px; }
+            .ft-badge { display: inline-block; background: #f0f0f0; padding: 3px 10px; border-radius: 20px; font-size: 11px; margin: 2px; }
+            .ft-actions { display: flex; gap: 8px; margin-top: 12px; padding-top: 10px; border-top: 1px solid #f0f0f0; }
+            .action-btn { padding: 5px 12px; border-radius: 6px; font-size: 11px; border: none; cursor: pointer; }
+            .action-view { background: #3b82f6; color: white; }
+            .action-edit { background: #ff862d; color: white; }
+            .action-delete { background: #e74c3c; color: white; }
+            .ft-empty { text-align: center; padding: 60px; background: white; border-radius: 20px; }
+            @media (max-width: 640px) { .ft-grid { grid-template-columns: 1fr; } .ft-stats { gap: 15px; } .ft-stat-num { font-size: 22px; } }
+        </style>
+        
+        <div class="ft-container">
+            <div class="ft-header">
+                <div><h2 style="margin:0;"><i class="fas fa-tree"></i> Family Tree</h2><p style="opacity:0.9; margin:5px 0 0;">Manage family history</p></div>
+                <div class="ft-stats"><div class="ft-stat"><div class="ft-stat-num">${totalMembers}</div><div>Members</div></div><div class="ft-stat"><div class="ft-stat-num">${generations}</div><div>Generations</div></div></div>
+            </div>
+            
+            <div class="ft-controls">
+                <input type="text" id="ftSearch" class="ft-search" placeholder="🔍 Search by name, tribe, occupation..." onkeyup="filterFamilyTree()">
+                <button class="ft-btn ft-btn-primary" onclick="openAddFamilyMemberForm()"><i class="fas fa-plus"></i> Add Member</button>
+                <button class="ft-btn ft-btn-secondary" onclick="openFamilyTreeSettings()"><i class="fas fa-cog"></i> Settings</button>
+            </div>
+            
+            <div id="ftGenerations">
+                ${sortedGens.map(gen => `
+                    <div class="ft-generation">
+                        <div class="ft-gen-title">${genLabels[gen] || `Generation ${gen}`}</div>
+                        <div class="ft-grid" data-gen="${gen}">
+                            ${grouped[gen].map(person => renderAdminCard(person)).join('')}
+                        </div>
+                    </div>
+                `).join('')}
+                ${people.length === 0 ? '<div class="ft-empty"><i class="fas fa-tree" style="font-size:64px;color:#ccc;"></i><h3>No Family Members</h3><button class="ft-btn ft-btn-primary" onclick="openAddFamilyMemberForm()" style="margin-top:15px;">Add First Member</button></div>' : ''}
+            </div>
+        </div>
+    `;
+}
+
+// Admin Card with Edit/Delete buttons
+function renderAdminCard(person) {
+    const isDeceased = person.is_deceased;
+    const genderIcon = person.gender === 'female' ? 'fa-female' : (person.gender === 'male' ? 'fa-male' : 'fa-user');
+    const birthYear = person.date_of_birth ? new Date(person.date_of_birth).getFullYear() : '?';
+    
+    return `
+        <div class="ft-card" data-name="${(person.full_name || '').toLowerCase()}" data-tribe="${(person.tribe || '').toLowerCase()}" data-occ="${(person.occupation || '').toLowerCase()}">
+            <div class="ft-card-header ${isDeceased ? 'deceased' : ''}">
+                <div class="ft-avatar">
+                    ${person.profile_picture ? `<img src="${person.profile_picture}">` : `<i class="fas ${genderIcon}"></i>`}
+                </div>
+                <div><div class="ft-card-name">${escapeHtml(person.full_name)}</div><div class="ft-card-detail">Born ${birthYear} ${isDeceased ? '🕊️' : '💚'}</div></div>
+            </div>
+            <div class="ft-card-body">
+                <div>${person.tribe ? `<span class="ft-badge"><i class="fas fa-users"></i> ${escapeHtml(person.tribe)}</span>` : ''}${person.occupation ? `<span class="ft-badge"><i class="fas fa-briefcase"></i> ${escapeHtml(person.occupation)}</span>` : ''}</div>
+                <div class="ft-actions">
+                    <button class="action-btn action-view" onclick="viewFamilyMember(${person.id})"><i class="fas fa-eye"></i> View</button>
+                    <button class="action-btn action-edit" onclick="editFamilyMember(${person.id})"><i class="fas fa-edit"></i> Edit</button>
+                    <button class="action-btn action-delete" onclick="deleteFamilyMember(${person.id})"><i class="fas fa-trash"></i></button>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+// ============================================
+// FAMILY TREE - FULLY WORKING WITH ALL OPTIONS
+// 3-Dot Menu: View, Edit, Add Spouse, Add Child, Delete - ALL WORKING
+// ============================================
+
+let familyMembers = [];
+let currentZoom = 1;
+
+// ============================================
+// MAIN RENDER FUNCTION
+// ============================================
+async function renderFamilyTree() {
+    console.log("🌳 Building Family Tree...");
+    
+    document.getElementById('pageContent').innerHTML = `
+        <style>
+            .ft-container {
+                background: linear-gradient(135deg, #f5efe8 0%, #e8dfd3 100%);
+                border-radius: 24px;
+                overflow: hidden;
+                box-shadow: 0 10px 40px rgba(0,0,0,0.1);
+            }
+            .ft-header {
+                background: linear-gradient(135deg, #1a4a4a, #2d6a6a);
+                padding: 20px 25px;
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                flex-wrap: wrap;
+                gap: 15px;
+                color: white;
+            }
+            .ft-title h2 { margin: 0; font-size: 22px; }
+            .ft-title p { margin: 5px 0 0; font-size: 12px; opacity: 0.8; }
+            .ft-stats { display: flex; gap: 30px; }
+            .ft-stat { text-align: center; }
+            .ft-stat-number { font-size: 28px; font-weight: 800; }
+            .ft-stat-label { font-size: 11px; opacity: 0.8; }
+            
+            .ft-toolbar {
+                background: white;
+                padding: 12px 20px;
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                flex-wrap: wrap;
+                gap: 12px;
+                border-bottom: 1px solid #e0d5c0;
+            }
+            .ft-search {
+                display: flex;
+                gap: 10px;
+                align-items: center;
+                background: #f5efe8;
+                padding: 5px 15px;
+                border-radius: 40px;
+            }
+            .ft-search i { color: #8B6914; }
+            .ft-search input {
+                border: none;
+                background: none;
+                padding: 8px 5px;
+                width: 200px;
+                outline: none;
+                font-size: 14px;
+            }
+            .ft-buttons { display: flex; gap: 10px; }
+            .ft-btn {
+                padding: 8px 20px;
+                border-radius: 30px;
+                border: none;
+                cursor: pointer;
+                font-weight: 600;
+                transition: all 0.2s;
+                display: inline-flex;
+                align-items: center;
+                gap: 8px;
+            }
+            .ft-btn-primary { background: #d4a056; color: white; }
+            .ft-btn-primary:hover { background: #b8860b; transform: scale(1.02); }
+            .ft-btn-secondary { background: #e0d5c0; color: #4a6a6a; }
+            .ft-btn-secondary:hover { background: #d4c9b0; }
+            
+            .ft-tree {
+                padding: 30px;
+                overflow-x: auto;
+                min-height: 550px;
+                background: #f5efe8;
+            }
+            .ft-generation {
+                display: flex;
+                justify-content: center;
+                margin-bottom: 35px;
+                flex-wrap: wrap;
+                gap: 20px;
+                position: relative;
+            }
+            .ft-generation::after {
+                content: '';
+                position: absolute;
+                bottom: -20px;
+                left: 50%;
+                transform: translateX(-50%);
+                width: 2px;
+                height: 20px;
+                background: #c4a43a;
+            }
+            .ft-generation:last-child::after { display: none; }
+            
+            .ft-card {
+                background: white;
+                border-radius: 16px;
+                padding: 12px 20px;
+                min-width: 160px;
+                text-align: center;
+                box-shadow: 0 4px 15px rgba(0,0,0,0.08);
+                border-left: 4px solid #d4a056;
+                transition: all 0.2s;
+                position: relative;
+                cursor: pointer;
+            }
+            .ft-card:hover {
+                transform: translateY(-3px);
+                box-shadow: 0 8px 25px rgba(0,0,0,0.12);
+            }
+            .ft-card.deceased {
+                background: #e8e0d0;
+                border-left-color: #8a8a8a;
+                opacity: 0.8;
+            }
+            .ft-card-name {
+                font-weight: 800;
+                font-size: 15px;
+                color: #2d5a5a;
+                margin-bottom: 4px;
+            }
+            .ft-card-year {
+                font-size: 11px;
+                color: #8B6914;
+                margin-bottom: 4px;
+            }
+            .ft-card-tribe {
+                font-size: 10px;
+                color: #b8860b;
+            }
+            
+            .ft-menu {
+                position: absolute;
+                top: 8px;
+                right: 10px;
+                cursor: pointer;
+                color: #b8860b;
+                font-size: 14px;
+                padding: 4px 8px;
+                border-radius: 10px;
+                background: rgba(0,0,0,0.05);
+                transition: all 0.2s;
+                z-index: 10;
+            }
+            .ft-menu:hover { background: rgba(0,0,0,0.15); }
+            
+            .gen-badge {
+                display: inline-block;
+                padding: 4px 12px;
+                border-radius: 20px;
+                font-size: 11px;
+                font-weight: 600;
+                margin-bottom: 15px;
+                background: #d4a056;
+                color: white;
+            }
+            
+            .ft-empty {
+                text-align: center;
+                padding: 80px;
+                background: white;
+                border-radius: 20px;
+            }
+            
+            .ft-legend {
+                display: flex;
+                gap: 25px;
+                justify-content: center;
+                padding: 12px 20px;
+                background: white;
+                border-top: 1px solid #e0d5c0;
+                flex-wrap: wrap;
+            }
+            .ft-legend-item {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                font-size: 12px;
+            }
+            .ft-legend-color {
+                width: 16px;
+                height: 16px;
+                border-radius: 4px;
+            }
+            .ft-arrow {
+                text-align: center;
+                margin: -15px 0 5px;
+                color: #c4a43a;
+                font-size: 20px;
+            }
+            
+            @media (max-width: 768px) {
+                .ft-card { min-width: 130px; padding: 8px 12px; }
+                .ft-card-name { font-size: 12px; }
+                .ft-header { flex-direction: column; text-align: center; }
+                .ft-tree { padding: 20px; }
+                .ft-generation { gap: 12px; }
+            }
+        </style>
+        
+        <div class="ft-container">
+            <div class="ft-header">
+                <div class="ft-title">
+                    <h2><i class="fas fa-tree"></i> Family Tree</h2>
+                    <p>Trace your family history across generations</p>
+                </div>
+                <div class="ft-stats">
+                    <div class="ft-stat">
+                        <div class="ft-stat-number" id="memberCount">0</div>
+                        <div class="ft-stat-label">Members</div>
+                    </div>
+                    <div class="ft-stat">
+                        <div class="ft-stat-number" id="genCount">0</div>
+                        <div class="ft-stat-label">Generations</div>
+                    </div>
+                    <div class="ft-stat">
+                        <div class="ft-stat-number" id="familyCount">0</div>
+                        <div class="ft-stat-label">Families</div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="ft-toolbar">
+                <div class="ft-search">
+                    <i class="fas fa-search"></i>
+                    <input type="text" id="searchMember" placeholder="Search by name..." onkeyup="searchFamilyMember()">
+                </div>
+                <div class="ft-buttons">
+                    <button class="ft-btn ft-btn-primary" onclick="openAddMemberForm()">
+                        <i class="fas fa-plus"></i> Add Member
+                    </button>
+                    <button class="ft-btn ft-btn-secondary" onclick="zoomTreeIn()">
+                        <i class="fas fa-search-plus"></i>
+                    </button>
+                    <button class="ft-btn ft-btn-secondary" onclick="zoomTreeOut()">
+                        <i class="fas fa-search-minus"></i>
+                    </button>
+                    <button class="ft-btn ft-btn-secondary" onclick="resetTreeZoom()">
+                        <i class="fas fa-sync-alt"></i>
+                    </button>
+                </div>
+            </div>
+            
+            <div id="treeContainer" class="ft-tree" style="zoom: 1">
+                <div style="text-align:center; padding:50px;">
+                    <i class="fas fa-spinner fa-pulse" style="font-size: 32px; color: #d4a056;"></i>
+                    <p>Loading family tree...</p>
+                </div>
+            </div>
+            
+            <div class="ft-legend">
+                <div class="ft-legend-item"><div class="ft-legend-color" style="background: #d4a056;"></div> Living</div>
+                <div class="ft-legend-item"><div class="ft-legend-color" style="background: #8a8a8a;"></div> Deceased</div>
+                <div class="ft-legend-item"><i class="fas fa-arrow-down"></i> Parent → Child</div>
+                <div class="ft-legend-item"><i class="fas fa-ellipsis-v"></i> Click ⋮ for options</div>
+            </div>
+        </div>
+    `;
+    
+    await loadFamilyMembers();
+    buildFamilyTree();
+    updateFamilyStats();
+}
+
+// ============================================
+// LOAD DATA
+// ============================================
+async function loadFamilyMembers() {
+    const { data, error } = await _supabase.from('family_tree').select('*');
+    if (!error) familyMembers = data || [];
+    return familyMembers;
+}
+
+function updateFamilyStats() {
+    document.getElementById('memberCount').textContent = familyMembers.length;
+    const gens = [...new Set(familyMembers.map(p => p.generation_level ?? 0))].length;
+    document.getElementById('genCount').textContent = gens || 1;
+    const families = familyMembers.filter(p => p.spouse_id).length / 2;
+    document.getElementById('familyCount').textContent = Math.floor(families);
+}
+
+// ============================================
+// BUILD FAMILY TREE
+// ============================================
+function buildFamilyTree() {
+    if (familyMembers.length === 0) {
+        document.getElementById('treeContainer').innerHTML = `
+            <div class="ft-empty">
+                <i class="fas fa-tree" style="font-size: 64px; color: #ccc;"></i>
+                <h3>No Family Members Yet</h3>
+                <p>Click "Add Member" to start building your family tree.</p>
+            </div>
+        `;
+        return;
+    }
+    
+    const minGen = Math.min(...familyMembers.map(p => p.generation_level ?? 0));
+    const roots = familyMembers.filter(p => (p.generation_level ?? 0) === minGen);
+    
+    let html = `<div class="ft-tree" style="zoom:${currentZoom}">`;
+    let currentGen = [...roots];
+    let processedIds = new Set();
+    let level = 0;
+    const maxLevel = 10;
+    
+    while (currentGen.length > 0 && level < maxLevel) {
+        const genNames = {
+            '-4': 'Great Great Grandparents (4th Gen)',
+            '-3': 'Great Grandparents (3rd Gen)',
+            '-2': 'Grandparents (2nd Gen)',
+            '-1': 'Parents (1st Gen)',
+            '0': '⭐ Current Generation',
+            '1': 'Children',
+            '2': 'Grandchildren',
+            '3': 'Great Grandchildren'
+        };
+        
+        const genLabel = level === 0 ? genNames[minGen] || `Generation ${minGen}` : '';
+        
+        if (genLabel) {
+            html += `<div style="text-align:center; margin-bottom: 15px;">
+                        <span class="gen-badge">${genLabel}</span>
+                     </div>`;
+        }
+        
+        html += `<div class="ft-generation">`;
+        
+        for (const person of currentGen) {
+            if (!person) {
+                html += `<div class="ft-card" style="opacity:0.4;"><div class="ft-card-name">— Empty —</div></div>`;
+                continue;
+            }
+            
+            if (processedIds.has(person.id)) continue;
+            processedIds.add(person.id);
+            
+            const year = person.date_of_birth ? new Date(person.date_of_birth).getFullYear() : '?';
+            const isDead = person.is_deceased;
+            const genderIcon = person.gender === 'female' ? 'fa-female' : 'fa-male';
+            
+            html += `
+                <div class="ft-card ${isDead ? 'deceased' : ''}" data-id="${person.id}" data-name="${(person.full_name || '').toLowerCase()}">
+                    <div class="ft-menu" onclick="event.stopPropagation(); showMemberMenu(event, ${person.id})">
+                        <i class="fas fa-ellipsis-v"></i>
+                    </div>
+                    <div class="ft-card-name">
+                        <i class="fas ${genderIcon}"></i> ${escapeHtml(person.full_name)} ${isDead ? '🕊️' : ''}
+                    </div>
+                    <div class="ft-card-year">${year}</div>
+                    ${person.tribe ? `<div class="ft-card-tribe">🏷️ ${escapeHtml(person.tribe)}</div>` : ''}
+                </div>
+            `;
+        }
+        
+        html += `</div>`;
+        
+        const nextGen = [];
+        for (const person of currentGen) {
+            if (person) {
+                const children = familyMembers.filter(c => c.father_id === person.id || c.mother_id === person.id);
+                for (const child of children) {
+                    if (!nextGen.includes(child)) {
+                        nextGen.push(child);
+                    }
+                }
+            }
+        }
+        
+        if (nextGen.length > 0) {
+            html += `<div class="ft-arrow"><i class="fas fa-arrow-down"></i></div>`;
+        }
+        
+        currentGen = nextGen;
+        level++;
+    }
+    
+    html += `</div>`;
+    document.getElementById('treeContainer').innerHTML = html;
+}
+
+// ============================================
+// 3-DOT MENU - USING BUTTONS WITH DIRECT FUNCTION CALLS
+// ============================================
+function showMemberMenu(event, memberId) {
+    event.stopPropagation();
+    const person = familyMembers.find(p => p.id === memberId);
+    if (!person) return;
+    
+    // Create custom modal with buttons that have direct onclick handlers
+    const modalHtml = `
+        <div style="text-align: left;">
+            <button id="menuViewBtn" style="width:100%; margin:8px 0; padding:12px; text-align:left; background: #f0f0f0; border: none; border-radius: 10px; cursor: pointer;">
+                <i class="fas fa-eye" style="color: #3b82f6; width: 25px;"></i> View Details
+            </button>
+            <button id="menuEditBtn" style="width:100%; margin:8px 0; padding:12px; text-align:left; background: #f0f0f0; border: none; border-radius: 10px; cursor: pointer;">
+                <i class="fas fa-edit" style="color: #ff862d; width: 25px;"></i> Edit Member
+            </button>
+            <button id="menuSpouseBtn" style="width:100%; margin:8px 0; padding:12px; text-align:left; background: #f0f0f0; border: none; border-radius: 10px; cursor: pointer;">
+                <i class="fas fa-heart" style="color: #e74c3c; width: 25px;"></i> Add Spouse
+            </button>
+            <button id="menuChildBtn" style="width:100%; margin:8px 0; padding:12px; text-align:left; background: #f0f0f0; border: none; border-radius: 10px; cursor: pointer;">
+                <i class="fas fa-child" style="color: #27ae60; width: 25px;"></i> Add Child
+            </button>
+            <button id="menuDeleteBtn" style="width:100%; margin:8px 0; padding:12px; text-align:left; background: #f0f0f0; border: none; border-radius: 10px; cursor: pointer;">
+                <i class="fas fa-trash" style="color: #e74c3c; width: 25px;"></i> Delete Member
+            </button>
+        </div>
+    `;
+    
+    Swal.fire({
+        title: `<i class="fas fa-user"></i> ${escapeHtml(person.full_name)}`,
+        html: modalHtml,
+        showConfirmButton: false,
+        showCloseButton: true,
+        width: '320px',
+        didOpen: () => {
+            // Attach event listeners after modal is opened
+            document.getElementById('menuViewBtn').onclick = () => {
+                Swal.close();
+                viewMemberDetails(memberId);
+            };
+            document.getElementById('menuEditBtn').onclick = () => {
+                Swal.close();
+                editMemberDetails(memberId);
+            };
+            document.getElementById('menuSpouseBtn').onclick = () => {
+                Swal.close();
+                addMemberSpouse(memberId);
+            };
+            document.getElementById('menuChildBtn').onclick = () => {
+                Swal.close();
+                addMemberChild(memberId);
+            };
+            document.getElementById('menuDeleteBtn').onclick = () => {
+                Swal.close();
+                deleteMemberRecord(memberId);
+            };
+        }
+    });
+}
+
+// ============================================
+// VIEW MEMBER DETAILS
+// ============================================
+async function viewMemberDetails(id) {
+    const p = familyMembers.find(p => p.id === id);
+    if (!p) return;
+    
+    const father = familyMembers.find(f => f.id === p.father_id);
+    const mother = familyMembers.find(m => m.id === p.mother_id);
+    const spouse = familyMembers.find(s => s.id === p.spouse_id);
+    const children = familyMembers.filter(c => c.father_id === id || c.mother_id === id);
+    const siblings = familyMembers.filter(s => 
+        s.id !== id && 
+        ((s.father_id === p.father_id && p.father_id) || (s.mother_id === p.mother_id && p.mother_id))
+    );
+    
+    let detailsHtml = `
+        <div style="text-align:center; margin-bottom:15px;">
+            <div style="width: 80px; height: 80px; background: linear-gradient(135deg, #d4a056, #8B6914); border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto;">
+                <i class="fas ${p.gender === 'female' ? 'fa-female' : 'fa-male'}" style="font-size: 40px; color: white;"></i>
+            </div>
+        </div>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+            <div><strong>📅 Born:</strong> ${p.date_of_birth ? new Date(p.date_of_birth).toLocaleDateString() : 'Unknown'}</div>
+            ${p.is_deceased ? `<div><strong>🕊️ Died:</strong> ${p.date_of_death ? new Date(p.date_of_death).toLocaleDateString() : 'Unknown'}</div>` : ''}
+            <div><strong>🏷️ Tribe:</strong> ${p.tribe || 'Unknown'}</div>
+            <div><strong>💼 Occupation:</strong> ${p.occupation || 'Unknown'}</div>
+            <div><strong>📍 Residence:</strong> ${p.current_residence || 'Unknown'}</div>
+        </div>
+        <hr>
+        <div><strong>👨‍👩‍👧‍👦 Family Relations:</strong></div>
+        <div style="margin-top: 8px;">
+            ${father ? `<div><span style="display:inline-block; width:80px;">👨 Father:</span> <strong>${escapeHtml(father.full_name)}</strong></div>` : ''}
+            ${mother ? `<div><span style="display:inline-block; width:80px;">👩 Mother:</span> <strong>${escapeHtml(mother.full_name)}</strong></div>` : ''}
+            ${spouse ? `<div><span style="display:inline-block; width:80px;">💑 Spouse:</span> <strong>${escapeHtml(spouse.full_name)}</strong></div>` : ''}
+            ${children.length ? `<div><span style="display:inline-block; width:80px;">👶 Children:</span> <strong>${children.map(c => c.full_name).join(', ')}</strong></div>` : ''}
+            ${siblings.length ? `<div><span style="display:inline-block; width:80px;">👥 Siblings:</span> <strong>${siblings.map(s => s.full_name).join(', ')}</strong></div>` : ''}
+        </div>
+        ${p.biography ? `<hr><div><strong>📖 Biography:</strong><br>${escapeHtml(p.biography)}</div>` : ''}
+    `;
+    
+    Swal.fire({
+        title: `<i class="fas fa-user-circle"></i> ${escapeHtml(p.full_name)}`,
+        html: detailsHtml,
+        width: '500px',
+        confirmButtonText: 'Close'
+    });
+}
+
+// ============================================
+// ADD MEMBER FORM
+// ============================================
+function openAddMemberForm() {
+    const options = familyMembers.map(p => `<option value="${p.id}">${escapeHtml(p.full_name)} (${p.gender})</option>`).join('');
+    
+    Swal.fire({
+        title: '<i class="fas fa-user-plus"></i> Add Family Member',
+        html: `
+            <div style="max-height: 60vh; overflow-y: auto; padding: 0 5px;">
+                <input id="fullName" class="swal2-input" placeholder="Full Name *" style="margin-bottom: 10px;">
+                <select id="gender" class="swal2-select" style="margin-bottom: 10px;">
+                    <option value="male">👨 Male</option>
+                    <option value="female">👩 Female</option>
+                </select>
+                <input id="birthYear" class="swal2-input" placeholder="Birth Year" type="number" style="margin-bottom: 10px;">
+                <input id="tribe" class="swal2-input" placeholder="Tribe/Clan" style="margin-bottom: 10px;">
+                <input id="occupation" class="swal2-input" placeholder="Occupation" style="margin-bottom: 10px;">
+                <select id="generation" class="swal2-select" style="margin-bottom: 10px;">
+                    <option value="-3">Great Grandparent</option>
+                    <option value="-2">Grandparent</option>
+                    <option value="-1">Parent</option>
+                    <option value="0" selected>Current Generation</option>
+                    <option value="1">Child</option>
+                    <option value="2">Grandchild</option>
+                </select>
+                <hr>
+                <div style="font-weight:bold; margin: 10px 0;">👨‍👩‍👧 Parents (Optional):</div>
+                <select id="fatherId" class="swal2-select" style="margin-bottom: 10px;"><option value="">Select Father</option>${options}</select>
+                <select id="motherId" class="swal2-select" style="margin-bottom: 10px;"><option value="">Select Mother</option>${options}</select>
+                <hr>
+                <div style="font-weight:bold; margin: 10px 0;">💑 Spouse (Optional):</div>
+                <select id="spouseId" class="swal2-select" style="margin-bottom: 10px;"><option value="">Select Spouse</option>${options}</select>
+                <textarea id="bio" class="swal2-textarea" placeholder="Biography (optional)" rows="2"></textarea>
+            </div>
+        `,
+        width: '500px',
+        preConfirm: () => {
+            const name = document.getElementById('fullName').value;
+            if (!name) { Swal.showValidationMessage('Full Name required'); return false; }
+            return {
+                full_name: name,
+                gender: document.getElementById('gender').value,
+                date_of_birth: document.getElementById('birthYear').value ? `${document.getElementById('birthYear').value}-01-01` : null,
+                tribe: document.getElementById('tribe').value,
+                occupation: document.getElementById('occupation').value,
+                generation_level: parseInt(document.getElementById('generation').value),
+                father_id: document.getElementById('fatherId').value || null,
+                mother_id: document.getElementById('motherId').value || null,
+                spouse_id: document.getElementById('spouseId').value || null,
+                biography: document.getElementById('bio').value
+            };
+        },
+        showCancelButton: true,
+        confirmButtonText: '<i class="fas fa-save"></i> Add Member'
+    }).then(async (result) => {
+        if (result.isConfirmed) {
+            const { error } = await _supabase.from('family_tree').insert(result.value);
+            if (error) Swal.fire('Error', error.message, 'error');
+            else { Swal.fire('Success', 'Member added!', 'success'); renderFamilyTree(); }
+        }
+    });
+}
+
+// ============================================
+// EDIT MEMBER
+// ============================================
+async function editMemberDetails(id) {
+    const p = familyMembers.find(p => p.id === id);
+    if (!p) return;
+    
+    Swal.fire({
+        title: '<i class="fas fa-edit"></i> Edit Family Member',
+        html: `
+            <input id="editName" class="swal2-input" value="${escapeHtml(p.full_name)}" placeholder="Full Name">
+            <select id="editGender" class="swal2-select">
+                <option value="male" ${p.gender === 'male' ? 'selected' : ''}>👨 Male</option>
+                <option value="female" ${p.gender === 'female' ? 'selected' : ''}>👩 Female</option>
+            </select>
+            <input id="editYear" class="swal2-input" value="${p.date_of_birth ? new Date(p.date_of_birth).getFullYear() : ''}" placeholder="Birth Year">
+            <input id="editTribe" class="swal2-input" value="${escapeHtml(p.tribe || '')}" placeholder="Tribe/Clan">
+            <input id="editOccupation" class="swal2-input" value="${escapeHtml(p.occupation || '')}" placeholder="Occupation">
+            <textarea id="editBio" class="swal2-textarea" placeholder="Biography" rows="2">${escapeHtml(p.biography || '')}</textarea>
+        `,
+        preConfirm: () => ({
+            full_name: document.getElementById('editName').value,
+            gender: document.getElementById('editGender').value,
+            date_of_birth: document.getElementById('editYear').value ? `${document.getElementById('editYear').value}-01-01` : null,
+            tribe: document.getElementById('editTribe').value,
+            occupation: document.getElementById('editOccupation').value,
+            biography: document.getElementById('editBio').value
+        }),
+        showCancelButton: true,
+        confirmButtonText: 'Save Changes'
+    }).then(async (result) => {
+        if (result.isConfirmed) {
+            await _supabase.from('family_tree').update(result.value).eq('id', id);
+            Swal.fire('Updated', 'Member updated', 'success');
+            renderFamilyTree();
+        }
+    });
+}
+
+// ============================================
+// ADD SPOUSE (Quick Action)
+// ============================================
+function addMemberSpouse(id) {
+    const person = familyMembers.find(p => p.id === id);
+    const options = familyMembers.filter(p => p.id !== id).map(p => `<option value="${p.id}">${escapeHtml(p.full_name)} (${p.gender})</option>`).join('');
+    
+    Swal.fire({
+        title: `<i class="fas fa-heart"></i> Add Spouse for ${escapeHtml(person.full_name)}`,
+        html: `<select id="spouseSelect" class="swal2-select" style="width:100%; padding:10px;">${options}</select>`,
+        preConfirm: () => ({ spouse_id: document.getElementById('spouseSelect').value }),
+        showCancelButton: true,
+        confirmButtonText: 'Add Spouse'
+    }).then(async (result) => {
+        if (result.isConfirmed && result.value.spouse_id) {
+            const spouseId = parseInt(result.value.spouse_id);
+            await _supabase.from('family_tree').update({ spouse_id: spouseId }).eq('id', id);
+            await _supabase.from('family_tree').update({ spouse_id: id }).eq('id', spouseId);
+            Swal.fire('Success', 'Spouse added!', 'success');
+            renderFamilyTree();
+        }
+    });
+}
+
+// ============================================
+// ADD CHILD (Quick Action)
+// ============================================
+function addMemberChild(id) {
+    const person = familyMembers.find(p => p.id === id);
+    
+    Swal.fire({
+        title: `<i class="fas fa-child"></i> Add Child for ${escapeHtml(person.full_name)}`,
+        html: `
+            <input id="childName" class="swal2-input" placeholder="Child's Name *">
+            <select id="childGender" class="swal2-select">
+                <option value="male">👨 Male</option>
+                <option value="female">👩 Female</option>
+            </select>
+            <input id="childYear" class="swal2-input" placeholder="Birth Year" type="number">
+            <input id="childTribe" class="swal2-input" placeholder="Tribe/Clan">
+        `,
+        preConfirm: () => {
+            const name = document.getElementById('childName').value;
+            if (!name) { Swal.showValidationMessage('Child name required'); return false; }
+            return {
+                full_name: name,
+                gender: document.getElementById('childGender').value,
+                date_of_birth: document.getElementById('childYear').value ? `${document.getElementById('childYear').value}-01-01` : null,
+                tribe: document.getElementById('childTribe').value,
+                generation_level: (person.generation_level ?? 0) + 1,
+                father_id: person.gender === 'male' ? id : null,
+                mother_id: person.gender === 'female' ? id : null
+            };
+        },
+        showCancelButton: true,
+        confirmButtonText: 'Add Child'
+    }).then(async (result) => {
+        if (result.isConfirmed) {
+            await _supabase.from('family_tree').insert(result.value);
+            Swal.fire('Success', 'Child added!', 'success');
+            renderFamilyTree();
+        }
+    });
+}
+
+// ============================================
+// DELETE MEMBER
+// ============================================
+async function deleteMemberRecord(id) {
+    const person = familyMembers.find(p => p.id === id);
+    Swal.fire({
+        title: 'Delete Member?',
+        text: `Delete ${person?.full_name}? This cannot be undone.`,
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#e74c3c',
+        confirmButtonText: 'Yes, Delete'
+    }).then(async (result) => {
+        if (result.isConfirmed) {
+            await _supabase.from('family_tree').delete().eq('id', id);
+            Swal.fire('Deleted', 'Member removed', 'success');
+            renderFamilyTree();
+        }
+    });
+}
+
+// ============================================
+// ZOOM CONTROLS
+// ============================================
+function zoomTreeIn() {
+    currentZoom = Math.min(1.3, currentZoom + 0.1);
+    const container = document.getElementById('treeContainer');
+    if (container) container.style.zoom = currentZoom;
+}
+
+function zoomTreeOut() {
+    currentZoom = Math.max(0.6, currentZoom - 0.1);
+    const container = document.getElementById('treeContainer');
+    if (container) container.style.zoom = currentZoom;
+}
+
+function resetTreeZoom() {
+    currentZoom = 1;
+    const container = document.getElementById('treeContainer');
+    if (container) container.style.zoom = 1;
+}
+
+// ============================================
+// SEARCH
+// ============================================
+function searchFamilyMember() {
+    const term = document.getElementById('searchMember').value.toLowerCase();
+    const cards = document.querySelectorAll('.ft-card');
+    cards.forEach(card => {
+        const name = card.dataset.name || '';
+        if (term && name.includes(term)) {
+            card.style.border = '2px solid #e74c3c';
+            card.style.boxShadow = '0 0 0 3px rgba(231,76,60,0.3)';
+            card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        } else {
+            card.style.border = '';
+            card.style.boxShadow = '';
+        }
+    });
+}
+
+// ============================================
+// UTILITIES
+// ============================================
+function escapeHtml(str) {
+    if (!str) return '';
+    return str.replace(/[&<>]/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[m]);
+}
+
+// ============================================
+// EXPOSE GLOBAL FUNCTIONS
+// ============================================
+window.renderFamilyTree = renderFamilyTree;
+window.viewMemberDetails = viewMemberDetails;
+window.openAddMemberForm = openAddMemberForm;
+window.editMemberDetails = editMemberDetails;
+window.deleteMemberRecord = deleteMemberRecord;
+window.addMemberSpouse = addMemberSpouse;
+window.addMemberChild = addMemberChild;
+window.searchFamilyMember = searchFamilyMember;
+window.zoomTreeIn = zoomTreeIn;
+window.zoomTreeOut = zoomTreeOut;
+window.resetTreeZoom = resetTreeZoom;
+window.showMemberMenu = showMemberMenu;
 // ============================================
 // EXPOSE GLOBAL FUNCTIONS
 // ============================================
