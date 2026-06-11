@@ -7135,8 +7135,9 @@ function renderAdminCard(person) {
 }
 
 // ============================================
-// FAMILY TREE - FULLY WORKING WITH ALL OPTIONS
-// 3-Dot Menu: View, Edit, Add Spouse, Add Child, Delete - ALL WORKING
+// FAMILY TREE - CORRECTED VERSION
+// USERS: View Only (No edit options)
+// ADMIN: Full control with 3-dot menu
 // ============================================
 
 let familyMembers = [];
@@ -7147,6 +7148,8 @@ let currentZoom = 1;
 // ============================================
 async function renderFamilyTree() {
     console.log("🌳 Building Family Tree...");
+    
+    const isAdmin = (_currentRole === 'admin');
     
     document.getElementById('pageContent').innerHTML = `
         <style>
@@ -7280,6 +7283,7 @@ async function renderFamilyTree() {
                 color: #b8860b;
             }
             
+            /* 3-Dot Menu - Only visible for Admin */
             .ft-menu {
                 position: absolute;
                 top: 8px;
@@ -7340,6 +7344,14 @@ async function renderFamilyTree() {
                 font-size: 20px;
             }
             
+            /* View Only Mode - No cursor pointer on cards for users */
+            .view-only .ft-card {
+                cursor: default;
+            }
+            .view-only .ft-card:hover {
+                transform: none;
+            }
+            
             @media (max-width: 768px) {
                 .ft-card { min-width: 130px; padding: 8px 12px; }
                 .ft-card-name { font-size: 12px; }
@@ -7349,7 +7361,7 @@ async function renderFamilyTree() {
             }
         </style>
         
-        <div class="ft-container">
+        <div class="ft-container ${!isAdmin ? 'view-only' : ''}">
             <div class="ft-header">
                 <div class="ft-title">
                     <h2><i class="fas fa-tree"></i> Family Tree</h2>
@@ -7377,18 +7389,10 @@ async function renderFamilyTree() {
                     <input type="text" id="searchMember" placeholder="Search by name..." onkeyup="searchFamilyMember()">
                 </div>
                 <div class="ft-buttons">
-                    <button class="ft-btn ft-btn-primary" onclick="openAddMemberForm()">
-                        <i class="fas fa-plus"></i> Add Member
-                    </button>
-                    <button class="ft-btn ft-btn-secondary" onclick="zoomTreeIn()">
-                        <i class="fas fa-search-plus"></i>
-                    </button>
-                    <button class="ft-btn ft-btn-secondary" onclick="zoomTreeOut()">
-                        <i class="fas fa-search-minus"></i>
-                    </button>
-                    <button class="ft-btn ft-btn-secondary" onclick="resetTreeZoom()">
-                        <i class="fas fa-sync-alt"></i>
-                    </button>
+                    ${isAdmin ? `<button class="ft-btn ft-btn-primary" onclick="openAddMemberForm()"><i class="fas fa-plus"></i> Add Member</button>` : ''}
+                    <button class="ft-btn ft-btn-secondary" onclick="zoomTreeIn()"><i class="fas fa-search-plus"></i></button>
+                    <button class="ft-btn ft-btn-secondary" onclick="zoomTreeOut()"><i class="fas fa-search-minus"></i></button>
+                    <button class="ft-btn ft-btn-secondary" onclick="resetTreeZoom()"><i class="fas fa-sync-alt"></i></button>
                 </div>
             </div>
             
@@ -7403,7 +7407,7 @@ async function renderFamilyTree() {
                 <div class="ft-legend-item"><div class="ft-legend-color" style="background: #d4a056;"></div> Living</div>
                 <div class="ft-legend-item"><div class="ft-legend-color" style="background: #8a8a8a;"></div> Deceased</div>
                 <div class="ft-legend-item"><i class="fas fa-arrow-down"></i> Parent → Child</div>
-                <div class="ft-legend-item"><i class="fas fa-ellipsis-v"></i> Click ⋮ for options</div>
+                ${isAdmin ? '<div class="ft-legend-item"><i class="fas fa-ellipsis-v"></i> Click ⋮ for options (Admin Only)</div>' : '<div class="ft-legend-item"><i class="fas fa-eye"></i> Click any card to view details</div>'}
             </div>
         </div>
     `;
@@ -7445,6 +7449,7 @@ function buildFamilyTree() {
         return;
     }
     
+    const isAdmin = (_currentRole === 'admin');
     const minGen = Math.min(...familyMembers.map(p => p.generation_level ?? 0));
     const roots = familyMembers.filter(p => (p.generation_level ?? 0) === minGen);
     
@@ -7489,11 +7494,14 @@ function buildFamilyTree() {
             const isDead = person.is_deceased;
             const genderIcon = person.gender === 'female' ? 'fa-female' : 'fa-male';
             
+            // Only show 3-dot menu for admin
+            const menuHtml = isAdmin ? `<div class="ft-menu" onclick="event.stopPropagation(); showMemberMenu(event, ${person.id})">
+                                            <i class="fas fa-ellipsis-v"></i>
+                                        </div>` : '';
+            
             html += `
-                <div class="ft-card ${isDead ? 'deceased' : ''}" data-id="${person.id}" data-name="${(person.full_name || '').toLowerCase()}">
-                    <div class="ft-menu" onclick="event.stopPropagation(); showMemberMenu(event, ${person.id})">
-                        <i class="fas fa-ellipsis-v"></i>
-                    </div>
+                <div class="ft-card ${isDead ? 'deceased' : ''}" data-id="${person.id}" data-name="${(person.full_name || '').toLowerCase()}" onclick="${!isAdmin ? `viewMemberDetails(${person.id})` : ''}">
+                    ${menuHtml}
                     <div class="ft-card-name">
                         <i class="fas ${genderIcon}"></i> ${escapeHtml(person.full_name)} ${isDead ? '🕊️' : ''}
                     </div>
@@ -7530,7 +7538,7 @@ function buildFamilyTree() {
 }
 
 // ============================================
-// 3-DOT MENU - USING BUTTONS WITH DIRECT FUNCTION CALLS
+// 3-DOT MENU - ADMIN ONLY
 // ============================================
 function showMemberMenu(event, memberId) {
     event.stopPropagation();
@@ -7565,33 +7573,17 @@ function showMemberMenu(event, memberId) {
         showCloseButton: true,
         width: '320px',
         didOpen: () => {
-            // Attach event listeners after modal is opened
-            document.getElementById('menuViewBtn').onclick = () => {
-                Swal.close();
-                viewMemberDetails(memberId);
-            };
-            document.getElementById('menuEditBtn').onclick = () => {
-                Swal.close();
-                editMemberDetails(memberId);
-            };
-            document.getElementById('menuSpouseBtn').onclick = () => {
-                Swal.close();
-                addMemberSpouse(memberId);
-            };
-            document.getElementById('menuChildBtn').onclick = () => {
-                Swal.close();
-                addMemberChild(memberId);
-            };
-            document.getElementById('menuDeleteBtn').onclick = () => {
-                Swal.close();
-                deleteMemberRecord(memberId);
-            };
+            document.getElementById('menuViewBtn').onclick = () => { Swal.close(); viewMemberDetails(memberId); };
+            document.getElementById('menuEditBtn').onclick = () => { Swal.close(); editMemberDetails(memberId); };
+            document.getElementById('menuSpouseBtn').onclick = () => { Swal.close(); addMemberSpouse(memberId); };
+            document.getElementById('menuChildBtn').onclick = () => { Swal.close(); addMemberChild(memberId); };
+            document.getElementById('menuDeleteBtn').onclick = () => { Swal.close(); deleteMemberRecord(memberId); };
         }
     });
 }
 
 // ============================================
-// VIEW MEMBER DETAILS
+// VIEW MEMBER DETAILS (Available to ALL users)
 // ============================================
 async function viewMemberDetails(id) {
     const p = familyMembers.find(p => p.id === id);
@@ -7606,41 +7598,38 @@ async function viewMemberDetails(id) {
         ((s.father_id === p.father_id && p.father_id) || (s.mother_id === p.mother_id && p.mother_id))
     );
     
-    let detailsHtml = `
-        <div style="text-align:center; margin-bottom:15px;">
-            <div style="width: 80px; height: 80px; background: linear-gradient(135deg, #d4a056, #8B6914); border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto;">
-                <i class="fas ${p.gender === 'female' ? 'fa-female' : 'fa-male'}" style="font-size: 40px; color: white;"></i>
-            </div>
-        </div>
-        <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
-            <div><strong>📅 Born:</strong> ${p.date_of_birth ? new Date(p.date_of_birth).toLocaleDateString() : 'Unknown'}</div>
-            ${p.is_deceased ? `<div><strong>🕊️ Died:</strong> ${p.date_of_death ? new Date(p.date_of_death).toLocaleDateString() : 'Unknown'}</div>` : ''}
-            <div><strong>🏷️ Tribe:</strong> ${p.tribe || 'Unknown'}</div>
-            <div><strong>💼 Occupation:</strong> ${p.occupation || 'Unknown'}</div>
-            <div><strong>📍 Residence:</strong> ${p.current_residence || 'Unknown'}</div>
-        </div>
-        <hr>
-        <div><strong>👨‍👩‍👧‍👦 Family Relations:</strong></div>
-        <div style="margin-top: 8px;">
-            ${father ? `<div><span style="display:inline-block; width:80px;">👨 Father:</span> <strong>${escapeHtml(father.full_name)}</strong></div>` : ''}
-            ${mother ? `<div><span style="display:inline-block; width:80px;">👩 Mother:</span> <strong>${escapeHtml(mother.full_name)}</strong></div>` : ''}
-            ${spouse ? `<div><span style="display:inline-block; width:80px;">💑 Spouse:</span> <strong>${escapeHtml(spouse.full_name)}</strong></div>` : ''}
-            ${children.length ? `<div><span style="display:inline-block; width:80px;">👶 Children:</span> <strong>${children.map(c => c.full_name).join(', ')}</strong></div>` : ''}
-            ${siblings.length ? `<div><span style="display:inline-block; width:80px;">👥 Siblings:</span> <strong>${siblings.map(s => s.full_name).join(', ')}</strong></div>` : ''}
-        </div>
-        ${p.biography ? `<hr><div><strong>📖 Biography:</strong><br>${escapeHtml(p.biography)}</div>` : ''}
-    `;
-    
     Swal.fire({
         title: `<i class="fas fa-user-circle"></i> ${escapeHtml(p.full_name)}`,
-        html: detailsHtml,
+        html: `
+            <div style="text-align:center; margin-bottom:15px;">
+                <div style="width: 80px; height: 80px; background: linear-gradient(135deg, #d4a056, #8B6914); border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto;">
+                    <i class="fas ${p.gender === 'female' ? 'fa-female' : 'fa-male'}" style="font-size: 40px; color: white;"></i>
+                </div>
+            </div>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+                <div><strong>📅 Born:</strong> ${p.date_of_birth ? new Date(p.date_of_birth).toLocaleDateString() : 'Unknown'}</div>
+                ${p.is_deceased ? `<div><strong>🕊️ Died:</strong> ${p.date_of_death ? new Date(p.date_of_death).toLocaleDateString() : 'Unknown'}</div>` : ''}
+                <div><strong>🏷️ Tribe:</strong> ${p.tribe || 'Unknown'}</div>
+                <div><strong>💼 Occupation:</strong> ${p.occupation || 'Unknown'}</div>
+                <div><strong>📍 Residence:</strong> ${p.current_residence || 'Unknown'}</div>
+            </div>
+            <hr>
+            <div><strong>👨‍👩‍👧‍👦 Family Relations:</strong></div>
+            <div style="margin-top: 8px;">
+                ${father ? `<div><span style="display:inline-block; width:80px;">👨 Father:</span> <strong>${escapeHtml(father.full_name)}</strong></div>` : ''}
+                ${mother ? `<div><span style="display:inline-block; width:80px;">👩 Mother:</span> <strong>${escapeHtml(mother.full_name)}</strong></div>` : ''}
+                ${spouse ? `<div><span style="display:inline-block; width:80px;">💑 Spouse:</span> <strong>${escapeHtml(spouse.full_name)}</strong></div>` : ''}
+                ${children.length ? `<div><span style="display:inline-block; width:80px;">👶 Children:</span> <strong>${children.map(c => c.full_name).join(', ')}</strong></div>` : ''}
+                ${siblings.length ? `<div><span style="display:inline-block; width:80px;">👥 Siblings:</span> <strong>${siblings.map(s => s.full_name).join(', ')}</strong></div>` : ''}
+            </div>
+        `,
         width: '500px',
         confirmButtonText: 'Close'
     });
 }
 
 // ============================================
-// ADD MEMBER FORM
+// ADMIN ONLY FUNCTIONS
 // ============================================
 function openAddMemberForm() {
     const options = familyMembers.map(p => `<option value="${p.id}">${escapeHtml(p.full_name)} (${p.gender})</option>`).join('');
@@ -7703,9 +7692,6 @@ function openAddMemberForm() {
     });
 }
 
-// ============================================
-// EDIT MEMBER
-// ============================================
 async function editMemberDetails(id) {
     const p = familyMembers.find(p => p.id === id);
     if (!p) return;
@@ -7742,9 +7728,6 @@ async function editMemberDetails(id) {
     });
 }
 
-// ============================================
-// ADD SPOUSE (Quick Action)
-// ============================================
 function addMemberSpouse(id) {
     const person = familyMembers.find(p => p.id === id);
     const options = familyMembers.filter(p => p.id !== id).map(p => `<option value="${p.id}">${escapeHtml(p.full_name)} (${p.gender})</option>`).join('');
@@ -7766,9 +7749,6 @@ function addMemberSpouse(id) {
     });
 }
 
-// ============================================
-// ADD CHILD (Quick Action)
-// ============================================
 function addMemberChild(id) {
     const person = familyMembers.find(p => p.id === id);
     
@@ -7807,9 +7787,6 @@ function addMemberChild(id) {
     });
 }
 
-// ============================================
-// DELETE MEMBER
-// ============================================
 async function deleteMemberRecord(id) {
     const person = familyMembers.find(p => p.id === id);
     Swal.fire({
